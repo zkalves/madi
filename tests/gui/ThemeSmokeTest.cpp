@@ -14,6 +14,10 @@
 #include <QApplication>
 #include <QMouseEvent>
 #include <QKeyEvent>
+#include <QMimeData>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
 #include <cassert>
 #include <iostream>
 
@@ -2649,6 +2653,183 @@ int main(int argc, char* argv[]) {
     assert(clip_text.contains("Shift+F9"));
 
     std::cout << "[Test 36] Keyboard Shortcuts & Documentation Verification passed successfully!" << std::endl;
+  }
+
+  // =========================================================================
+  // 37. Test Unified Mouse Pointer Shape Placement & Drag-and-Drop
+  // =========================================================================
+  {
+    std::cout << "[Test 37] Testing Unified Mouse Pointer Placement and Drag-and-Drop..." << std::endl;
+    vector::gui::MainWindow win;
+    win.show();
+    auto* canvas = win.canvas();
+    auto* shapes_dock = win.dock_shapes();
+    assert(canvas != nullptr);
+    assert(shapes_dock != nullptr);
+
+    auto* tree = shapes_dock->tree_widget();
+    assert(tree != nullptr);
+
+    // 1. Verify Double-Clicking Stencil Shapes Attaches Candidate to Mouse Pointer
+    auto find_item = [&](const QString& text) -> QTreeWidgetItem* {
+      for (int i = 0; i < tree->topLevelItemCount(); ++i) {
+        auto* cat = tree->topLevelItem(i);
+        for (int j = 0; j < cat->childCount(); ++j) {
+          if (cat->child(j)->text(0).contains(text, Qt::CaseInsensitive)) {
+            return cat->child(j);
+          }
+        }
+      }
+      return nullptr;
+    };
+
+    // A: Test Right-Angled Triangle
+    auto* right_tri_item = find_item("Right-Angled Triangle");
+    assert(right_tri_item != nullptr);
+    const size_t initial_nodes = canvas->graph_model()->node_count();
+
+    // Double-click triggers item
+    tree->itemDoubleClicked(right_tri_item, 0);
+    assert(canvas->is_placement_tool_active());
+    assert(canvas->tool_mode() == vector::renderer::ToolMode::AddCustomShape);
+    assert(canvas->active_placement_template().category == vector::renderer::PlacementCategory::CustomPolygon);
+    assert(canvas->active_placement_template().name == "Right Triangle");
+    assert(canvas->placement_preview_bounds().is_valid());
+    assert(canvas->placement_preview_bounds().width > 0.0);
+    // Node is NOT placed yet (remains attached to pointer)
+    assert(canvas->graph_model()->node_count() == initial_nodes);
+
+    // Move pointer and simulate left-click on canvas to place shape
+    const QPoint click_pos(250, 200);
+    QMouseEvent press_event(QEvent::MouseButtonPress, click_pos, click_pos, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &press_event);
+
+    // Shape is now instantiated on canvas, and tool mode reverts to Select
+    assert(!canvas->is_placement_tool_active());
+    assert(canvas->tool_mode() == vector::renderer::ToolMode::Select);
+    assert(canvas->graph_model()->node_count() == initial_nodes + 1);
+
+    // Verify placed node properties
+    const auto& last_placed_id = canvas->selected_nodes().front();
+    const auto* placed_node = canvas->graph_model()->find_node(last_placed_id);
+    assert(placed_node != nullptr);
+    assert(placed_node->name == "Right Triangle");
+    assert(placed_node->shape == vector::core::ShapeType::CustomPolygon);
+    assert(placed_node->polygon_vertices.size() == 3);
+    (void)initial_nodes; (void)placed_node;
+
+    // B: Test Star
+    auto* star_item = find_item("5-Pointed Star");
+    assert(star_item != nullptr);
+    tree->itemDoubleClicked(star_item, 0);
+    assert(canvas->is_placement_tool_active());
+    assert(canvas->tool_mode() == vector::renderer::ToolMode::AddCustomShape);
+    assert(canvas->active_placement_template().name == "Star");
+
+    // Click canvas to place Star
+    const QPoint star_click(400, 300);
+    QMouseEvent star_press(QEvent::MouseButtonPress, star_click, star_click, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &star_press);
+    assert(canvas->tool_mode() == vector::renderer::ToolMode::Select);
+    assert(canvas->graph_model()->node_count() == initial_nodes + 2);
+    const auto* star_node = canvas->graph_model()->find_node(canvas->selected_nodes().front());
+    assert(star_node != nullptr);
+    assert(star_node->name == "Star");
+    assert(star_node->polygon_vertices.size() == 10);
+    (void)star_node;
+
+    // C: Test Regular Polygon (Hexagon)
+    auto* hex_item = find_item("Hexagon (6-gon)");
+    assert(hex_item != nullptr);
+    tree->itemDoubleClicked(hex_item, 0);
+    assert(canvas->is_placement_tool_active());
+    assert(canvas->active_placement_template().category == vector::renderer::PlacementCategory::RegularPolygon);
+    assert(canvas->active_placement_template().polygon_sides == 6);
+
+    // Cancel placement with Escape key
+    QKeyEvent esc_key(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &esc_key);
+    assert(!canvas->is_placement_tool_active());
+    assert(canvas->tool_mode() == vector::renderer::ToolMode::Select);
+
+    // D: Test Hierarchical Ports
+    auto* port_item = find_item("Hierarchical Input Port");
+    assert(port_item != nullptr);
+    tree->itemDoubleClicked(port_item, 0);
+    assert(canvas->is_placement_tool_active());
+    assert(canvas->active_placement_template().category == vector::renderer::PlacementCategory::HierarchicalPort);
+    assert(canvas->active_placement_template().is_input_port == true);
+
+    // Click canvas to place port
+    const QPoint port_click(150, 150);
+    QMouseEvent port_press(QEvent::MouseButtonPress, port_click, port_click, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &port_press);
+    assert(!canvas->is_placement_tool_active());
+    assert(canvas->graph_model()->node_count() == initial_nodes + 3);
+
+    // 2. Verify Drag-and-Drop from Palette directly onto Canvas
+    const size_t pre_drag_count = canvas->graph_model()->node_count();
+
+    // A: Drag a Diamond onto the canvas
+    auto* diamond_item = find_item("Diamond / Rhombus");
+    assert(diamond_item != nullptr);
+    const int d_type = diamond_item->data(0, Qt::UserRole).toInt();
+    const int d_param = diamond_item->data(0, Qt::UserRole + 1).toInt();
+    const QString d_custom = diamond_item->data(0, Qt::UserRole + 2).toString();
+
+    auto d_tmpl = vector::gui::StencilLibraryDock::template_from_stencil_data(d_type, d_param, d_custom);
+    QByteArray d_bytes = vector::renderer::serialize_placement_template(d_tmpl);
+
+    QMimeData* mime_data = new QMimeData();
+    mime_data->setData("application/x-vector-stencil", d_bytes);
+
+    const QPoint drop_pt(320, 240);
+
+    // Simulate drag enter
+    QDragEnterEvent enter_ev(drop_pt, Qt::CopyAction, mime_data, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &enter_ev);
+    assert(enter_ev.isAccepted());
+    assert(canvas->placement_preview_bounds().is_valid());
+
+    // Simulate drag move
+    QDragMoveEvent move_ev(drop_pt, Qt::CopyAction, mime_data, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &move_ev);
+    assert(move_ev.isAccepted());
+
+    // Simulate drop
+    QDropEvent drop_ev(drop_pt, Qt::CopyAction, mime_data, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &drop_ev);
+    assert(drop_ev.isAccepted());
+    assert(canvas->graph_model()->node_count() == pre_drag_count + 1);
+
+    const auto* dropped_diamond = canvas->graph_model()->find_node(canvas->selected_nodes().front());
+    assert(dropped_diamond != nullptr);
+    assert(dropped_diamond->name == "Diamond");
+    assert(dropped_diamond->polygon_vertices.size() == 4);
+    (void)pre_drag_count; (void)dropped_diamond;
+
+    // B: Test drag-and-drop of Cross
+    auto* cross_item = find_item("Orthogonal Cross");
+    assert(cross_item != nullptr);
+    const int c_type = cross_item->data(0, Qt::UserRole).toInt();
+    const int c_param = cross_item->data(0, Qt::UserRole + 1).toInt();
+    auto c_tmpl = vector::gui::StencilLibraryDock::template_from_stencil_data(c_type, c_param, "");
+    QByteArray c_bytes = vector::renderer::serialize_placement_template(c_tmpl);
+
+    QMimeData* cross_mime = new QMimeData();
+    cross_mime->setData("application/x-vector-stencil", c_bytes);
+
+    QDropEvent cross_drop(QPoint(500, 350), Qt::CopyAction, cross_mime, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &cross_drop);
+    assert(canvas->graph_model()->node_count() == pre_drag_count + 2);
+
+    const auto* dropped_cross = canvas->graph_model()->find_node(canvas->selected_nodes().front());
+    assert(dropped_cross != nullptr);
+    assert(dropped_cross->name == "Cross");
+    assert(dropped_cross->polygon_vertices.size() == 12);
+    (void)dropped_cross;
+
+    std::cout << "[Test 37] Unified Mouse Pointer Placement and Drag-and-Drop passed successfully!" << std::endl;
   }
 
   std::cout << "===> All Theme System, Snapping & Hierarchical Port Smoke Tests passed successfully!" << std::endl;

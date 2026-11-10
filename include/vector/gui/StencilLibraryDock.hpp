@@ -8,10 +8,13 @@
 #ifdef VECTOR_ENABLE_QT
 
 #include <QAction>
+#include <QApplication>
 #include <QComboBox>
+#include <QDataStream>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDockWidget>
+#include <QDrag>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
@@ -21,6 +24,7 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
+#include <QMimeData>
 #include <QPushButton>
 #include <QShortcut>
 #include <QSpinBox>
@@ -38,6 +42,26 @@
 #include "vector/renderer/CanvasWidget.hpp"
 
 namespace vector::gui {
+
+class StencilTreeWidget : public QTreeWidget {
+public:
+  explicit StencilTreeWidget(QWidget* parent = nullptr) : QTreeWidget(parent) {
+    setDragEnabled(true);
+  }
+
+protected:
+  void mousePressEvent(QMouseEvent* event) override {
+    if (event->button() == Qt::LeftButton) {
+      drag_start_pos_ = event->pos();
+    }
+    QTreeWidget::mousePressEvent(event);
+  }
+
+  void mouseMoveEvent(QMouseEvent* event) override;
+
+private:
+  QPoint drag_start_pos_;
+};
 
 class StencilLibraryDock : public QDockWidget {
   Q_OBJECT
@@ -104,7 +128,7 @@ public:
     layout->addWidget(search_edit_);
 
     // Tree of stencils with prominent 28x28 icons for clear visibility
-    tree_ = new QTreeWidget(container);
+    tree_ = new StencilTreeWidget(container);
     tree_->setHeaderHidden(true);
     tree_->setIndentation(12);
     tree_->setAnimated(true);
@@ -266,7 +290,7 @@ public:
     populate_stencils();
   }
 
-  [[nodiscard]] QTreeWidget* tree_widget() const noexcept { return tree_; }
+  [[nodiscard]] StencilTreeWidget* tree_widget() const noexcept { return tree_; }
   [[nodiscard]] QLineEdit* search_edit() const noexcept { return search_edit_; }
   [[nodiscard]] QPushButton* add_button() const noexcept { return btn_add_; }
   [[nodiscard]] QPushButton* remove_button() const noexcept { return btn_remove_; }
@@ -566,6 +590,229 @@ private:
     return item;
   }
 
+public:
+  static renderer::ShapePlacementTemplate template_from_stencil_data(
+      int type_int,
+      int param = 0,
+      const QString& custom_name = QString()) {
+    auto type = static_cast<StencilItemType>(type_int);
+    renderer::ShapePlacementTemplate tmpl;
+
+    switch (type) {
+      case StencilItemType::ShapeRect:
+        tmpl.category = renderer::PlacementCategory::ShapeType;
+        tmpl.shape_type = core::ShapeType::Rectangle;
+        tmpl.name = "Rectangle";
+        tmpl.width = 120.0;
+        tmpl.height = 70.0;
+        break;
+      case StencilItemType::ShapeRoundedRect:
+        tmpl.category = renderer::PlacementCategory::ShapeType;
+        tmpl.shape_type = core::ShapeType::RoundedRect;
+        tmpl.name = "Rounded Rectangle";
+        tmpl.width = 120.0;
+        tmpl.height = 70.0;
+        break;
+      case StencilItemType::ShapeEllipse:
+        tmpl.category = renderer::PlacementCategory::ShapeType;
+        tmpl.shape_type = core::ShapeType::Ellipse;
+        tmpl.name = "Ellipse";
+        tmpl.width = 120.0;
+        tmpl.height = 70.0;
+        break;
+      case StencilItemType::ShapeRightTriangle:
+        tmpl.category = renderer::PlacementCategory::CustomPolygon;
+        tmpl.custom_vertices = {{0.0, 0.0}, {1.0, 1.0}, {0.0, 1.0}};
+        tmpl.name = "Right Triangle";
+        tmpl.width = 120.0;
+        tmpl.height = 100.0;
+        break;
+      case StencilItemType::ShapeTriangle:
+        tmpl.category = renderer::PlacementCategory::RegularPolygon;
+        tmpl.polygon_sides = 3;
+        tmpl.name = "Triangle";
+        tmpl.width = 120.0;
+        tmpl.height = 100.0;
+        break;
+      case StencilItemType::ShapeDiamond:
+        tmpl.category = renderer::PlacementCategory::RegularPolygon;
+        tmpl.polygon_sides = 4;
+        tmpl.name = "Diamond";
+        tmpl.width = 120.0;
+        tmpl.height = 100.0;
+        break;
+      case StencilItemType::ShapePentagon:
+        tmpl.category = renderer::PlacementCategory::RegularPolygon;
+        tmpl.polygon_sides = 5;
+        tmpl.name = "Pentagon";
+        tmpl.width = 120.0;
+        tmpl.height = 100.0;
+        break;
+      case StencilItemType::ShapeHexagon:
+        tmpl.category = renderer::PlacementCategory::RegularPolygon;
+        tmpl.polygon_sides = 6;
+        tmpl.name = "Hexagon";
+        tmpl.width = 120.0;
+        tmpl.height = 100.0;
+        break;
+      case StencilItemType::ShapeHeptagon:
+        tmpl.category = renderer::PlacementCategory::RegularPolygon;
+        tmpl.polygon_sides = 7;
+        tmpl.name = "Heptagon";
+        tmpl.width = 120.0;
+        tmpl.height = 100.0;
+        break;
+      case StencilItemType::ShapeOctagon:
+        tmpl.category = renderer::PlacementCategory::RegularPolygon;
+        tmpl.polygon_sides = 8;
+        tmpl.name = "Octagon";
+        tmpl.width = 120.0;
+        tmpl.height = 100.0;
+        break;
+      case StencilItemType::ShapeDecagon:
+        tmpl.category = renderer::PlacementCategory::RegularPolygon;
+        tmpl.polygon_sides = 10;
+        tmpl.name = "Decagon";
+        tmpl.width = 120.0;
+        tmpl.height = 100.0;
+        break;
+      case StencilItemType::ShapeDodecagon:
+        tmpl.category = renderer::PlacementCategory::RegularPolygon;
+        tmpl.polygon_sides = 12;
+        tmpl.name = "Dodecagon";
+        tmpl.width = 120.0;
+        tmpl.height = 100.0;
+        break;
+      case StencilItemType::ShapePolygonN:
+        tmpl.category = renderer::PlacementCategory::RegularPolygon;
+        tmpl.polygon_sides = (param > 2) ? param : 5;
+        tmpl.name = QString("Polygon %1-gon").arg(tmpl.polygon_sides).toStdString();
+        tmpl.width = 120.0;
+        tmpl.height = 100.0;
+        break;
+      case StencilItemType::ShapeParallelogram:
+        tmpl.category = renderer::PlacementCategory::CustomPolygon;
+        tmpl.custom_vertices = {{0.25, 0.0}, {1.0, 0.0}, {0.75, 1.0}, {0.0, 1.0}};
+        tmpl.name = "Parallelogram";
+        tmpl.width = 130.0;
+        tmpl.height = 80.0;
+        break;
+      case StencilItemType::ShapeTrapezoid:
+        tmpl.category = renderer::PlacementCategory::CustomPolygon;
+        tmpl.custom_vertices = {{0.2, 0.0}, {0.8, 0.0}, {1.0, 1.0}, {0.0, 1.0}};
+        tmpl.name = "Trapezoid";
+        tmpl.width = 130.0;
+        tmpl.height = 80.0;
+        break;
+      case StencilItemType::ShapeCross:
+        tmpl.category = renderer::PlacementCategory::CustomPolygon;
+        tmpl.custom_vertices = {
+          {0.35, 0.0}, {0.65, 0.0}, {0.65, 0.35},
+          {1.0, 0.35}, {1.0, 0.65}, {0.65, 0.65},
+          {0.65, 1.0}, {0.35, 1.0}, {0.35, 0.65},
+          {0.0, 0.65}, {0.0, 0.35}, {0.35, 0.35}
+        };
+        tmpl.name = "Cross";
+        tmpl.width = 100.0;
+        tmpl.height = 100.0;
+        break;
+      case StencilItemType::ShapeStar: {
+        tmpl.category = renderer::PlacementCategory::CustomPolygon;
+        tmpl.name = "Star";
+        tmpl.width = 110.0;
+        tmpl.height = 110.0;
+        tmpl.custom_vertices.reserve(10);
+        for (int i = 0; i < 10; ++i) {
+          const double r = (i % 2 == 0) ? 0.5 : 0.22;
+          const double rad = -std::numbers::pi / 2.0 + (std::numbers::pi * i) / 5.0;
+          tmpl.custom_vertices.push_back({0.5 + r * std::cos(rad), 0.5 + r * std::sin(rad)});
+        }
+        break;
+      }
+      case StencilItemType::ShapeChevron:
+        tmpl.category = renderer::PlacementCategory::CustomPolygon;
+        tmpl.custom_vertices = {
+          {0.0, 0.2}, {0.6, 0.2}, {0.6, 0.0},
+          {1.0, 0.5}, {0.6, 1.0}, {0.6, 0.8}, {0.0, 0.8}
+        };
+        tmpl.name = "Arrow Block";
+        tmpl.width = 130.0;
+        tmpl.height = 80.0;
+        break;
+      case StencilItemType::ShapeCylinder: {
+        tmpl.category = renderer::PlacementCategory::CustomPolygon;
+        tmpl.name = "Cylinder";
+        tmpl.width = 100.0;
+        tmpl.height = 120.0;
+        tmpl.custom_vertices.push_back({0.0, 0.2});
+        for (int i = 0; i <= 8; ++i) {
+          const double rad = std::numbers::pi - (std::numbers::pi * i) / 8.0;
+          tmpl.custom_vertices.push_back({0.5 + 0.5 * std::cos(rad), 0.2 - 0.15 * std::sin(rad)});
+        }
+        tmpl.custom_vertices.push_back({1.0, 0.8});
+        for (int i = 0; i <= 8; ++i) {
+          const double rad = -(std::numbers::pi * i) / 8.0;
+          tmpl.custom_vertices.push_back({0.5 + 0.5 * std::cos(rad), 0.8 - 0.15 * std::sin(rad)});
+        }
+        break;
+      }
+      case StencilItemType::ShapeInPort:
+        tmpl.category = renderer::PlacementCategory::HierarchicalPort;
+        tmpl.is_input_port = true;
+        tmpl.port_type = "in";
+        tmpl.name = "in_port";
+        tmpl.width = 84.0;
+        tmpl.height = 28.0;
+        break;
+      case StencilItemType::ShapeOutPort:
+        tmpl.category = renderer::PlacementCategory::HierarchicalPort;
+        tmpl.is_input_port = false;
+        tmpl.port_type = "out";
+        tmpl.name = "out_port";
+        tmpl.width = 84.0;
+        tmpl.height = 28.0;
+        break;
+      case StencilItemType::ShapeBiPort:
+        tmpl.category = renderer::PlacementCategory::HierarchicalPort;
+        tmpl.is_input_port = true;
+        tmpl.port_type = "inout";
+        tmpl.name = "inout_port";
+        tmpl.width = 84.0;
+        tmpl.height = 28.0;
+        break;
+      case StencilItemType::SubsystemBuiltin:
+        tmpl.category = renderer::PlacementCategory::SubsystemBuiltin;
+        tmpl.name = "Subsystem";
+        tmpl.width = 180.0;
+        tmpl.height = 100.0;
+        break;
+      case StencilItemType::SubsystemFile:
+        tmpl.category = renderer::PlacementCategory::SubsystemFile;
+        tmpl.name = "File Subsystem";
+        tmpl.width = 180.0;
+        tmpl.height = 100.0;
+        break;
+      case StencilItemType::CustomShape:
+        if (param > 2) {
+          tmpl.category = renderer::PlacementCategory::RegularPolygon;
+          tmpl.polygon_sides = param;
+          tmpl.name = custom_name.isEmpty() ? "Custom Polygon" : custom_name.toStdString();
+          tmpl.width = 120.0;
+          tmpl.height = 100.0;
+        } else {
+          tmpl.category = renderer::PlacementCategory::ShapeType;
+          tmpl.shape_type = core::ShapeType::Rectangle;
+          tmpl.name = custom_name.isEmpty() ? "Custom Shape" : custom_name.toStdString();
+          tmpl.width = 120.0;
+          tmpl.height = 70.0;
+        }
+        break;
+      default:
+        break;
+    }
+    return tmpl;
+  }
+
   void trigger_item(QTreeWidgetItem* item) {
     if (!canvas_ || !item) return;
     QVariant val = item->data(0, Qt::UserRole);
@@ -573,162 +820,39 @@ private:
 
     auto type = static_cast<StencilItemType>(val.toInt());
     int param = item->data(0, Qt::UserRole + 1).toInt();
-    const core::Vec2d center = canvas_->visible_world_frustum().center();
+    QString custom_name = item->data(0, Qt::UserRole + 2).toString();
 
-    switch (type) {
-      case StencilItemType::ShapeRect:
-        canvas_->set_tool_mode(renderer::ToolMode::AddRectangle);
-        break;
-      case StencilItemType::ShapeRoundedRect:
-        canvas_->set_tool_mode(renderer::ToolMode::AddRoundedRect);
-        break;
-      case StencilItemType::ShapeEllipse:
-        canvas_->set_tool_mode(renderer::ToolMode::AddEllipse);
-        break;
-      case StencilItemType::ShapeRightTriangle:
-        canvas_->add_custom_polygon_shape(center, {
-          {0.0, 0.0}, {1.0, 1.0}, {0.0, 1.0}
-        }, "Right Triangle", 120.0, 100.0);
-        canvas_->set_tool_mode(renderer::ToolMode::Select);
-        break;
-      case StencilItemType::ShapeTriangle:
-        canvas_->add_polygon(center, 3, "Triangle");
-        canvas_->set_tool_mode(renderer::ToolMode::Select);
-        break;
-      case StencilItemType::ShapeDiamond:
-        canvas_->add_polygon(center, 4, "Diamond");
-        canvas_->set_tool_mode(renderer::ToolMode::Select);
-        break;
-      case StencilItemType::ShapePentagon:
-        canvas_->add_polygon(center, 5, "Pentagon");
-        canvas_->set_tool_mode(renderer::ToolMode::Select);
-        break;
-      case StencilItemType::ShapeHexagon:
-        canvas_->add_polygon(center, 6, "Hexagon");
-        canvas_->set_tool_mode(renderer::ToolMode::Select);
-        break;
-      case StencilItemType::ShapeHeptagon:
-        canvas_->add_polygon(center, 7, "Heptagon");
-        canvas_->set_tool_mode(renderer::ToolMode::Select);
-        break;
-      case StencilItemType::ShapeOctagon:
-        canvas_->add_polygon(center, 8, "Octagon");
-        canvas_->set_tool_mode(renderer::ToolMode::Select);
-        break;
-      case StencilItemType::ShapeDecagon:
-        canvas_->add_polygon(center, 10, "Decagon");
-        canvas_->set_tool_mode(renderer::ToolMode::Select);
-        break;
-      case StencilItemType::ShapeDodecagon:
-        canvas_->add_polygon(center, 12, "Dodecagon");
-        canvas_->set_tool_mode(renderer::ToolMode::Select);
-        break;
-      case StencilItemType::ShapePolygonN:
-        canvas_->add_polygon(center, param > 2 ? param : 5, QString("Polygon %1-gon").arg(param).toStdString());
-        canvas_->set_tool_mode(renderer::ToolMode::Select);
-        break;
-      case StencilItemType::ShapeParallelogram:
-        canvas_->add_custom_polygon_shape(center, {
-          {0.25, 0.0}, {1.0, 0.0}, {0.75, 1.0}, {0.0, 1.0}
-        }, "Parallelogram", 130.0, 80.0);
-        canvas_->set_tool_mode(renderer::ToolMode::Select);
-        break;
-      case StencilItemType::ShapeTrapezoid:
-        canvas_->add_custom_polygon_shape(center, {
-          {0.2, 0.0}, {0.8, 0.0}, {1.0, 1.0}, {0.0, 1.0}
-        }, "Trapezoid", 130.0, 80.0);
-        canvas_->set_tool_mode(renderer::ToolMode::Select);
-        break;
-      case StencilItemType::ShapeCross:
-        canvas_->add_custom_polygon_shape(center, {
-          {0.35, 0.0}, {0.65, 0.0}, {0.65, 0.35},
-          {1.0, 0.35}, {1.0, 0.65}, {0.65, 0.65},
-          {0.65, 1.0}, {0.35, 1.0}, {0.35, 0.65},
-          {0.0, 0.65}, {0.0, 0.35}, {0.35, 0.35}
-        }, "Cross", 100.0, 100.0);
-        canvas_->set_tool_mode(renderer::ToolMode::Select);
-        break;
-      case StencilItemType::ShapeStar: {
-        std::vector<core::Vec2d> star_pts;
-        star_pts.reserve(10);
-        for (int i = 0; i < 10; ++i) {
-          const double r = (i % 2 == 0) ? 0.5 : 0.22;
-          const double rad = -std::numbers::pi / 2.0 + (std::numbers::pi * i) / 5.0;
-          star_pts.push_back({0.5 + r * std::cos(rad), 0.5 + r * std::sin(rad)});
-        }
-        canvas_->add_custom_polygon_shape(center, star_pts, "Star", 110.0, 110.0);
-        canvas_->set_tool_mode(renderer::ToolMode::Select);
-        break;
-      }
-      case StencilItemType::ShapeChevron:
-        canvas_->add_custom_polygon_shape(center, {
-          {0.0, 0.2}, {0.6, 0.2}, {0.6, 0.0},
-          {1.0, 0.5}, {0.6, 1.0}, {0.6, 0.8}, {0.0, 0.8}
-        }, "Arrow Block", 130.0, 80.0);
-        canvas_->set_tool_mode(renderer::ToolMode::Select);
-        break;
-      case StencilItemType::ShapeCylinder: {
-        std::vector<core::Vec2d> cyl_pts;
-        cyl_pts.push_back({0.0, 0.2});
-        for (int i = 0; i <= 8; ++i) {
-          const double rad = std::numbers::pi - (std::numbers::pi * i) / 8.0;
-          cyl_pts.push_back({0.5 + 0.5 * std::cos(rad), 0.2 - 0.15 * std::sin(rad)});
-        }
-        cyl_pts.push_back({1.0, 0.8});
-        for (int i = 0; i <= 8; ++i) {
-          const double rad = -(std::numbers::pi * i) / 8.0;
-          cyl_pts.push_back({0.5 + 0.5 * std::cos(rad), 0.8 - 0.15 * std::sin(rad)});
-        }
-        canvas_->add_custom_polygon_shape(center, cyl_pts, "Cylinder", 100.0, 120.0);
-        canvas_->set_tool_mode(renderer::ToolMode::Select);
-        break;
-      }
-      case StencilItemType::ShapePolygonTool:
-        canvas_->set_tool_mode(renderer::ToolMode::AddPolygon);
-        break;
-      case StencilItemType::ShapeInPort:
-        canvas_->add_hierarchical_port(center, true);
-        canvas_->set_tool_mode(renderer::ToolMode::Select);
-        break;
-      case StencilItemType::ShapeOutPort:
-        canvas_->add_hierarchical_port(center, false);
-        canvas_->set_tool_mode(renderer::ToolMode::Select);
-        break;
-      case StencilItemType::ShapeBiPort:
-        canvas_->add_hierarchical_port(center, true, "inout");
-        canvas_->set_tool_mode(renderer::ToolMode::Select);
-        break;
-      case StencilItemType::SubsystemBuiltin:
-        canvas_->set_tool_mode(renderer::ToolMode::AddHierarchicalBlock);
-        break;
-      case StencilItemType::SubsystemFile: {
-        const QString fpath = QFileDialog::getOpenFileName(
-            this, "Select or Create Subsystem File", "",
-            "Supported Formats (*.yaml *.drawio *.xml);;All Files (*)");
-        if (!fpath.isEmpty()) {
-          QFileInfo fi(fpath);
-          canvas_->add_subsystem(center, fi.baseName().toStdString(), true, fpath.toStdString());
-        }
-        canvas_->set_tool_mode(renderer::ToolMode::Select);
-        break;
-      }
-      case StencilItemType::ToolConnector:
-      case StencilItemType::ToolAutoArrow:
-        canvas_->set_tool_mode(renderer::ToolMode::AddConnector);
-        break;
-      case StencilItemType::CustomShape: {
-        QString custom_name = item->data(0, Qt::UserRole + 2).toString();
-        if (param > 2) {
-          canvas_->add_polygon(center, param, custom_name.toStdString());
-        } else {
-          canvas_->add_shape(core::ShapeType::Rectangle, center, custom_name.toStdString());
-        }
-        canvas_->set_tool_mode(renderer::ToolMode::Select);
-        break;
-      }
+    // Tools that activate drawing modes
+    if (type == StencilItemType::ShapePolygonTool) {
+      canvas_->set_tool_mode(renderer::ToolMode::AddPolygon);
+      return;
     }
+    if (type == StencilItemType::ToolConnector || type == StencilItemType::ToolAutoArrow) {
+      canvas_->set_tool_mode(renderer::ToolMode::AddConnector);
+      return;
+    }
+
+    // Subsystem from external file can prompt for file path before attaching to cursor
+    if (type == StencilItemType::SubsystemFile) {
+      const QString fpath = QFileDialog::getOpenFileName(
+          this, "Select or Create Subsystem File", "",
+          "Supported Formats (*.yaml *.drawio *.xml);;All Files (*)");
+      if (!fpath.isEmpty()) {
+        QFileInfo fi(fpath);
+        renderer::ShapePlacementTemplate tmpl = template_from_stencil_data(static_cast<int>(type), param, custom_name);
+        tmpl.name = fi.baseName().toStdString();
+        tmpl.file_path = fpath.toStdString();
+        canvas_->start_shape_placement(tmpl);
+      }
+      return;
+    }
+
+    // Unified pointer placement: attach any shape candidate to mouse pointer
+    renderer::ShapePlacementTemplate tmpl = template_from_stencil_data(static_cast<int>(type), param, custom_name);
+    canvas_->start_shape_placement(tmpl);
   }
 
+private:
   void filter_items(const QString& filter_text) {
     const QString text = filter_text.trimmed();
     for (int i = 0; i < tree_->topLevelItemCount(); ++i) {
@@ -764,13 +888,63 @@ private:
   }
 
   QLineEdit* search_edit_{nullptr};
-  QTreeWidget* tree_{nullptr};
+  StencilTreeWidget* tree_{nullptr};
   QPushButton* btn_add_{nullptr};
   QPushButton* btn_remove_{nullptr};
   QPushButton* btn_insert_{nullptr};
   renderer::CanvasWidget* canvas_{nullptr};
   QColor current_fg_{QColor("#CDD6F4")};
 };
+
+inline void StencilTreeWidget::mouseMoveEvent(QMouseEvent* event) {
+  if (!(event->buttons() & Qt::LeftButton)) {
+    QTreeWidget::mouseMoveEvent(event);
+    return;
+  }
+  if ((event->pos() - drag_start_pos_).manhattanLength() < QApplication::startDragDistance()) {
+    QTreeWidget::mouseMoveEvent(event);
+    return;
+  }
+
+  auto* item = itemAt(drag_start_pos_);
+  if (!item || item->parent() == nullptr) {
+    QTreeWidget::mouseMoveEvent(event);
+    return;
+  }
+
+  const int type = item->data(0, Qt::UserRole).toInt();
+  if (type == static_cast<int>(StencilLibraryDock::StencilItemType::ShapePolygonTool) ||
+      type == static_cast<int>(StencilLibraryDock::StencilItemType::ToolConnector) ||
+      type == static_cast<int>(StencilLibraryDock::StencilItemType::ToolAutoArrow)) {
+    QTreeWidget::mouseMoveEvent(event);
+    return;
+  }
+
+  const int param = item->data(0, Qt::UserRole + 1).toInt();
+  const QString custom_name = item->data(0, Qt::UserRole + 2).toString();
+  const QString title = item->text(0);
+
+  renderer::ShapePlacementTemplate tmpl = StencilLibraryDock::template_from_stencil_data(type, param, custom_name);
+  if (tmpl.name.empty() && !title.isEmpty()) {
+    tmpl.name = title.toStdString();
+  }
+
+  const QByteArray item_data = renderer::serialize_placement_template(tmpl);
+
+  auto* mime = new QMimeData();
+  mime->setData("application/x-vector-stencil", item_data);
+  mime->setText(title);
+
+  auto* drag = new QDrag(this);
+  drag->setMimeData(mime);
+
+  QPixmap pix = item->icon(0).pixmap(32, 32);
+  if (!pix.isNull()) {
+    drag->setPixmap(pix);
+    drag->setHotSpot(QPoint(pix.width() / 2, pix.height() / 2));
+  }
+  drag->exec(Qt::CopyAction | Qt::MoveAction);
+}
 
 } // namespace vector::gui
 

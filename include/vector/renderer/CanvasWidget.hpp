@@ -21,6 +21,11 @@
 #include <QPaintEvent>
 #include <QTimer>
 #include <QLineEdit>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
+#include <QMimeData>
+#include <QDataStream>
 #endif
 
 #include <memory>
@@ -38,8 +43,84 @@ enum class ToolMode : uint8_t {
   AddConnector,
   AddPolygon,
   AddInputPort,
-  AddOutputPort
+  AddOutputPort,
+  AddCustomShape
 };
+
+enum class PlacementCategory : uint8_t {
+  ShapeType,
+  RegularPolygon,
+  CustomPolygon,
+  HierarchicalPort,
+  SubsystemBuiltin,
+  SubsystemFile
+};
+
+struct ShapePlacementTemplate {
+  PlacementCategory category{PlacementCategory::ShapeType};
+  core::ShapeType shape_type{core::ShapeType::Rectangle};
+  int polygon_sides{6};
+  std::vector<core::Vec2d> custom_vertices;
+  std::string name;
+  double width{120.0};
+  double height{70.0};
+  bool is_input_port{true};
+  std::string port_type{"in"};
+  std::string file_path;
+};
+
+#ifdef VECTOR_ENABLE_QT
+inline QByteArray serialize_placement_template(const ShapePlacementTemplate& tmpl) {
+  QByteArray bytes;
+  QDataStream stream(&bytes, QIODevice::WriteOnly);
+  stream << static_cast<quint8>(tmpl.category)
+         << static_cast<quint8>(tmpl.shape_type)
+         << static_cast<qint32>(tmpl.polygon_sides)
+         << QString::fromStdString(tmpl.name)
+         << tmpl.width
+         << tmpl.height
+         << tmpl.is_input_port
+         << QString::fromStdString(tmpl.port_type)
+         << QString::fromStdString(tmpl.file_path);
+  stream << static_cast<qint32>(tmpl.custom_vertices.size());
+  for (const auto& v : tmpl.custom_vertices) {
+    stream << v.x << v.y;
+  }
+  return bytes;
+}
+
+inline bool deserialize_placement_template(const QByteArray& bytes, ShapePlacementTemplate& out_tmpl) {
+  if (bytes.isEmpty()) return false;
+  QDataStream stream(bytes);
+  quint8 cat = 0, stype = 0;
+  qint32 sides = 0;
+  QString name, port_type, file_path;
+  double w = 0.0, h = 0.0;
+  bool is_in = false;
+  qint32 num_vertices = 0;
+
+  stream >> cat >> stype >> sides >> name >> w >> h >> is_in >> port_type >> file_path >> num_vertices;
+  out_tmpl.category = static_cast<PlacementCategory>(cat);
+  out_tmpl.shape_type = static_cast<core::ShapeType>(stype);
+  out_tmpl.polygon_sides = sides;
+  out_tmpl.name = name.toStdString();
+  out_tmpl.width = w;
+  out_tmpl.height = h;
+  out_tmpl.is_input_port = is_in;
+  out_tmpl.port_type = port_type.toStdString();
+  out_tmpl.file_path = file_path.toStdString();
+  out_tmpl.custom_vertices.clear();
+  if (num_vertices > 0 && num_vertices < 10000) {
+    out_tmpl.custom_vertices.reserve(num_vertices);
+    for (qint32 i = 0; i < num_vertices; ++i) {
+      double vx = 0.0, vy = 0.0;
+      stream >> vx >> vy;
+      out_tmpl.custom_vertices.push_back({vx, vy});
+    }
+  }
+  return true;
+}
+#endif
 
 enum class PagePreset : uint8_t {
   Letter,
@@ -180,7 +261,7 @@ public:
     return hierarchy_context_ ? hierarchy_context_->breadcrumb_path() : "Top";
   }
 
-  // Tool Mode Management
+  // Tool Mode & Unified Shape Placement Management
   void set_tool_mode(ToolMode mode);
   [[nodiscard]] ToolMode tool_mode() const noexcept { return tool_mode_; }
   [[nodiscard]] bool is_placement_tool_active() const noexcept;
@@ -190,6 +271,10 @@ public:
   void set_pending_polygon_sides(int sides) noexcept { pending_polygon_sides_ = std::max(3, sides); }
   [[nodiscard]] int pending_polygon_sides() const noexcept { return pending_polygon_sides_; }
   void cancel_placement();
+
+  void start_shape_placement(const ShapePlacementTemplate& tmpl);
+  [[nodiscard]] const ShapePlacementTemplate& active_placement_template() const noexcept { return active_template_; }
+  core::NodeId instantiate_template_at(const ShapePlacementTemplate& tmpl, core::Vec2d center_world);
 
   // Interactive Point-and-Click Polygon Creation
   [[nodiscard]] const std::vector<core::Vec2d>& in_progress_polygon_points() const noexcept { return in_progress_polygon_points_; }
@@ -430,6 +515,10 @@ protected:
   void contextMenuEvent(QContextMenuEvent* event) override;
   void leaveEvent(QEvent* event) override;
   void enterEvent(QEnterEvent* event) override;
+  void dragEnterEvent(QDragEnterEvent* event) override;
+  void dragMoveEvent(QDragMoveEvent* event) override;
+  void dragLeaveEvent(QDragLeaveEvent* event) override;
+  void dropEvent(QDropEvent* event) override;
 #endif
 
 private:
@@ -512,6 +601,9 @@ private:
   bool cardinal_snap_priority_{true};
   double cardinal_snap_tolerance_deg_{4.0};
   core::Rect2d placement_preview_bounds_{0.0, 0.0, 0.0, 0.0};
+  ShapePlacementTemplate active_template_;
+  ShapePlacementTemplate drag_template_;
+  bool is_drag_active_{false};
   int pending_polygon_sides_{6};
   std::vector<core::Vec2d> in_progress_polygon_points_;
   core::Vec2d polygon_cursor_world_{0.0, 0.0};

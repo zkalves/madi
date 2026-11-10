@@ -6,6 +6,7 @@
 
 #ifdef VECTOR_ENABLE_QT
 #include <QContextMenuEvent>
+#include <QFileInfo>
 #include <QMenu>
 #include <QPainter>
 #include <QPainterPath>
@@ -47,6 +48,7 @@ CanvasWidget::CanvasWidget(QWidget* parent)
       renderer_(std::make_unique<CanvasRenderer>()) {
   setMouseTracking(true);
   setFocusPolicy(Qt::StrongFocus);
+  setAcceptDrops(true);
 
   inline_editor_ = new QLineEdit(this);
   inline_editor_->setVisible(false);
@@ -87,6 +89,29 @@ void CanvasWidget::set_tool_mode(ToolMode mode) {
   wiring_source_node_ = core::InvalidNodeId;
   wiring_source_port_ = core::InvalidPortId;
   in_progress_polygon_points_.clear();
+
+  switch (mode) {
+    case ToolMode::AddRectangle:
+      active_template_ = {PlacementCategory::ShapeType, core::ShapeType::Rectangle, 0, {}, "Rectangle", 120.0, 70.0, true, "in", ""};
+      break;
+    case ToolMode::AddRoundedRect:
+      active_template_ = {PlacementCategory::ShapeType, core::ShapeType::RoundedRect, 0, {}, "Rounded Rectangle", 120.0, 70.0, true, "in", ""};
+      break;
+    case ToolMode::AddEllipse:
+      active_template_ = {PlacementCategory::ShapeType, core::ShapeType::Ellipse, 0, {}, "Ellipse", 120.0, 70.0, true, "in", ""};
+      break;
+    case ToolMode::AddHierarchicalBlock:
+      active_template_ = {PlacementCategory::ShapeType, core::ShapeType::HierarchicalBlock, 0, {}, "Subsystem", 180.0, 100.0, true, "in", ""};
+      break;
+    case ToolMode::AddInputPort:
+      active_template_ = {PlacementCategory::HierarchicalPort, core::ShapeType::InputPort, 0, {}, "in_port", 84.0, 28.0, true, "in", ""};
+      break;
+    case ToolMode::AddOutputPort:
+      active_template_ = {PlacementCategory::HierarchicalPort, core::ShapeType::OutputPort, 0, {}, "out_port", 84.0, 28.0, false, "out", ""};
+      break;
+    default:
+      break;
+  }
 
   if (is_placement_tool_active()) {
     core::Vec2d mouse_screen = last_mouse_screen_;
@@ -141,9 +166,44 @@ void CanvasWidget::set_tool_mode(ToolMode mode) {
       setCursor(Qt::CrossCursor);
       emit status_message_requested("Tool: Output Port (Move pointer to position with snap, click to place, Right-click/Esc to cancel)");
       break;
+    case ToolMode::AddCustomShape:
+      setCursor(Qt::CrossCursor);
+      emit status_message_requested(QString("Tool: Place %1 (Move pointer to position with snap, click to place, Right-click/Esc to cancel)").arg(QString::fromStdString(active_template_.name.empty() ? "Shape" : active_template_.name)));
+      break;
   }
   emit tool_mode_changed(mode);
   update();
+}
+
+void CanvasWidget::start_shape_placement(const ShapePlacementTemplate& tmpl) {
+  active_template_ = tmpl;
+  set_tool_mode(ToolMode::AddCustomShape);
+}
+
+core::NodeId CanvasWidget::instantiate_template_at(const ShapePlacementTemplate& tmpl, core::Vec2d center_world) {
+  switch (tmpl.category) {
+    case PlacementCategory::RegularPolygon:
+      return add_polygon(center_world, tmpl.polygon_sides, tmpl.name, false);
+
+    case PlacementCategory::CustomPolygon:
+      return add_custom_polygon_shape(center_world, tmpl.custom_vertices, tmpl.name, tmpl.width, tmpl.height, false);
+
+    case PlacementCategory::HierarchicalPort:
+      return add_hierarchical_port(center_world, tmpl.is_input_port, tmpl.port_type, false);
+
+    case PlacementCategory::SubsystemBuiltin:
+      return add_subsystem(center_world, tmpl.name, false);
+
+    case PlacementCategory::SubsystemFile:
+      return add_subsystem(center_world, tmpl.name, true, tmpl.file_path);
+
+    case PlacementCategory::ShapeType:
+    default:
+      if (tmpl.shape_type == core::ShapeType::HierarchicalBlock) {
+        return add_subsystem(center_world, tmpl.name, false);
+      }
+      return add_shape(tmpl.shape_type, center_world, tmpl.name, false);
+  }
 }
 
 core::PortId CanvasWidget::find_hit_port(core::Vec2d world_pt, double tolerance, core::NodeId* out_node) const {
@@ -2550,11 +2610,8 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
     return;
   }
 
-  // Handle placement of new shapes
-  if (tool_mode_ == ToolMode::AddRectangle ||
-      tool_mode_ == ToolMode::AddRoundedRect ||
-      tool_mode_ == ToolMode::AddEllipse ||
-      tool_mode_ == ToolMode::AddHierarchicalBlock) {
+  // Handle placement of new shapes (Unified Shape Placement Engine)
+  if (is_placement_tool_active()) {
     core::Vec2d drop_pos = interaction_start_world_;
     if (placement_preview_bounds_.is_valid() && placement_preview_bounds_.width > 0.0) {
       drop_pos = placement_preview_bounds_.center();
@@ -2566,32 +2623,7 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
       drop_pos = cand.center();
     }
 
-    if (tool_mode_ == ToolMode::AddHierarchicalBlock) {
-      add_subsystem(drop_pos, "", false);
-    } else {
-      core::ShapeType shape_type = core::ShapeType::Rectangle;
-      if (tool_mode_ == ToolMode::AddRoundedRect) shape_type = core::ShapeType::RoundedRect;
-      else if (tool_mode_ == ToolMode::AddEllipse) shape_type = core::ShapeType::Ellipse;
-      add_shape(shape_type, drop_pos, "", false);
-    }
-    cancel_placement();
-    return;
-  }
-
-  // Handle placement of hierarchical input/output ports
-  if (tool_mode_ == ToolMode::AddInputPort || tool_mode_ == ToolMode::AddOutputPort) {
-    core::Vec2d drop_pos = interaction_start_world_;
-    if (placement_preview_bounds_.is_valid() && placement_preview_bounds_.width > 0.0) {
-      drop_pos = placement_preview_bounds_.center();
-    } else {
-      core::Rect2d cand = get_placement_bounds(tool_mode_, interaction_start_world_);
-      core::Vec2d snap = compute_smart_alignment(core::InvalidNodeId, cand);
-      cand.x += snap.x;
-      cand.y += snap.y;
-      drop_pos = cand.center();
-    }
-
-    add_hierarchical_port(drop_pos, tool_mode_ == ToolMode::AddInputPort, "", false);
+    instantiate_template_at(active_template_, drop_pos);
     cancel_placement();
     return;
   }
@@ -3660,11 +3692,113 @@ void CanvasWidget::enterEvent(QEnterEvent* event) {
     update();
   }
 }
+
+void CanvasWidget::dragEnterEvent(QDragEnterEvent* event) {
+  if (event->mimeData()->hasFormat("application/x-vector-stencil") || event->mimeData()->hasUrls()) {
+    if (event->mimeData()->hasFormat("application/x-vector-stencil")) {
+      const QByteArray bytes = event->mimeData()->data("application/x-vector-stencil");
+      deserialize_placement_template(bytes, drag_template_);
+      is_drag_active_ = true;
+
+      const QPointF pos = event->position();
+      last_mouse_screen_ = {pos.x(), pos.y()};
+      const core::Vec2d current_world = screen_to_world(last_mouse_screen_);
+      core::Rect2d cand_bounds{current_world.x - drag_template_.width * 0.5,
+                               current_world.y - drag_template_.height * 0.5,
+                               drag_template_.width,
+                               drag_template_.height};
+      const core::Vec2d snap_offset = compute_smart_alignment(core::InvalidNodeId, cand_bounds);
+      cand_bounds.x += snap_offset.x;
+      cand_bounds.y += snap_offset.y;
+      placement_preview_bounds_ = cand_bounds;
+      update();
+    }
+    event->acceptProposedAction();
+  } else {
+    event->ignore();
+  }
+}
+
+void CanvasWidget::dragMoveEvent(QDragMoveEvent* event) {
+  if (event->mimeData()->hasFormat("application/x-vector-stencil")) {
+    const QPointF pos = event->position();
+    last_mouse_screen_ = {pos.x(), pos.y()};
+    const core::Vec2d current_world = screen_to_world(last_mouse_screen_);
+    core::Rect2d cand_bounds{current_world.x - drag_template_.width * 0.5,
+                             current_world.y - drag_template_.height * 0.5,
+                             drag_template_.width,
+                             drag_template_.height};
+    if (!(event->modifiers() & Qt::AltModifier)) {
+      const core::Vec2d snap_offset = compute_smart_alignment(core::InvalidNodeId, cand_bounds);
+      cand_bounds.x += snap_offset.x;
+      cand_bounds.y += snap_offset.y;
+    } else {
+      active_smart_guides_.clear();
+    }
+    placement_preview_bounds_ = cand_bounds;
+    update();
+    event->acceptProposedAction();
+  } else if (event->mimeData()->hasUrls()) {
+    event->acceptProposedAction();
+  } else {
+    event->ignore();
+  }
+}
+
+void CanvasWidget::dragLeaveEvent(QDragLeaveEvent* event) {
+  is_drag_active_ = false;
+  placement_preview_bounds_ = {0.0, 0.0, 0.0, 0.0};
+  active_smart_guides_.clear();
+  update();
+  event->accept();
+}
+
+void CanvasWidget::dropEvent(QDropEvent* event) {
+  if (event->mimeData()->hasFormat("application/x-vector-stencil")) {
+    const QByteArray bytes = event->mimeData()->data("application/x-vector-stencil");
+    ShapePlacementTemplate tmpl = drag_template_;
+    deserialize_placement_template(bytes, tmpl);
+
+    core::Vec2d drop_pos;
+    if (placement_preview_bounds_.is_valid() && placement_preview_bounds_.width > 0.0) {
+      drop_pos = placement_preview_bounds_.center();
+    } else {
+      const QPointF pos = event->position();
+      drop_pos = screen_to_world({pos.x(), pos.y()});
+    }
+
+    instantiate_template_at(tmpl, drop_pos);
+    is_drag_active_ = false;
+    placement_preview_bounds_ = {0.0, 0.0, 0.0, 0.0};
+    active_smart_guides_.clear();
+    update();
+    event->acceptProposedAction();
+  } else if (event->mimeData()->hasUrls()) {
+    for (const auto& url : event->mimeData()->urls()) {
+      const QString local = url.toLocalFile();
+      if (!local.isEmpty()) {
+        const QFileInfo fi(local);
+        const QPointF pos = event->position();
+        const core::Vec2d drop_pos = screen_to_world({pos.x(), pos.y()});
+        add_subsystem(drop_pos, fi.baseName().toStdString(), true, local.toStdString());
+      }
+    }
+    is_drag_active_ = false;
+    placement_preview_bounds_ = {0.0, 0.0, 0.0, 0.0};
+    active_smart_guides_.clear();
+    update();
+    event->acceptProposedAction();
+  } else {
+    event->ignore();
+  }
+}
 #else
 CanvasWidget::CanvasWidget()
     : renderer_(std::make_unique<CanvasRenderer>()) {}
 CanvasWidget::~CanvasWidget() = default;
 void CanvasWidget::set_tool_mode(ToolMode mode) { tool_mode_ = mode; }
+void CanvasWidget::start_shape_placement(const ShapePlacementTemplate&) {}
+core::NodeId CanvasWidget::instantiate_template_at(const ShapePlacementTemplate&, core::Vec2d) { return 0; }
 core::NodeId CanvasWidget::add_shape(core::ShapeType, core::Vec2d, const std::string&, bool) { return 0; }
 core::NodeId CanvasWidget::add_polygon(core::Vec2d, int, const std::string&, bool) { return 0; }
 core::NodeId CanvasWidget::add_custom_polygon_shape(core::Vec2d, const std::vector<core::Vec2d>&, const std::string&, double, double, bool) { return 0; }
@@ -3718,7 +3852,8 @@ bool CanvasWidget::is_placement_tool_active() const noexcept {
          tool_mode_ == ToolMode::AddEllipse ||
          tool_mode_ == ToolMode::AddHierarchicalBlock ||
          tool_mode_ == ToolMode::AddInputPort ||
-         tool_mode_ == ToolMode::AddOutputPort;
+         tool_mode_ == ToolMode::AddOutputPort ||
+         tool_mode_ == ToolMode::AddCustomShape;
 }
 
 bool CanvasWidget::is_polygon_drawing_active() const noexcept {
@@ -3728,27 +3863,32 @@ bool CanvasWidget::is_polygon_drawing_active() const noexcept {
 core::Rect2d CanvasWidget::get_placement_bounds(ToolMode mode, core::Vec2d center_world) const {
   double w = 120.0;
   double h = 70.0;
-  switch (mode) {
-    case ToolMode::AddHierarchicalBlock:
-      w = 180.0;
-      h = 100.0;
-      break;
-    case ToolMode::AddPolygon:
-      w = 120.0;
-      h = 100.0;
-      break;
-    case ToolMode::AddInputPort:
-    case ToolMode::AddOutputPort:
-      w = 84.0;
-      h = 28.0;
-      break;
-    case ToolMode::AddRectangle:
-    case ToolMode::AddRoundedRect:
-    case ToolMode::AddEllipse:
-    default:
-      w = 120.0;
-      h = 70.0;
-      break;
+  if (mode == ToolMode::AddCustomShape && active_template_.width > 0.0 && active_template_.height > 0.0) {
+    w = active_template_.width;
+    h = active_template_.height;
+  } else {
+    switch (mode) {
+      case ToolMode::AddHierarchicalBlock:
+        w = 180.0;
+        h = 100.0;
+        break;
+      case ToolMode::AddPolygon:
+        w = 120.0;
+        h = 100.0;
+        break;
+      case ToolMode::AddInputPort:
+      case ToolMode::AddOutputPort:
+        w = 84.0;
+        h = 28.0;
+        break;
+      case ToolMode::AddRectangle:
+      case ToolMode::AddRoundedRect:
+      case ToolMode::AddEllipse:
+      default:
+        w = 120.0;
+        h = 70.0;
+        break;
+    }
   }
   return {center_world.x - w * 0.5, center_world.y - h * 0.5, w, h};
 }
@@ -5263,7 +5403,10 @@ void CanvasWidget::render_canvas() {
     }
 
     // 7.5 Candidate Placement Preview Silhouette (Moving Ghost Shape with Snapping & Pin Visuals)
-    if (is_placement_tool_active() && placement_preview_bounds_.is_valid() && placement_preview_bounds_.width > 0.0) {
+    const bool is_preview_showing = (is_placement_tool_active() || is_drag_active_) &&
+                                    placement_preview_bounds_.is_valid() &&
+                                    placement_preview_bounds_.width > 0.0;
+    if (is_preview_showing) {
       const core::Vec2d g_tl = world_to_screen({placement_preview_bounds_.x, placement_preview_bounds_.y});
       const double g_sw = placement_preview_bounds_.width * zoom_level_;
       const double g_sh = placement_preview_bounds_.height * zoom_level_;
@@ -5275,22 +5418,32 @@ void CanvasWidget::render_canvas() {
       painter.setPen(ghost_pen);
       painter.setBrush(ghost_fill);
 
-      if (tool_mode_ == ToolMode::AddRectangle) {
-        painter.drawRect(qr_ghost);
-      } else if (tool_mode_ == ToolMode::AddRoundedRect) {
-        painter.drawRoundedRect(qr_ghost, 8.0, 8.0);
-      } else if (tool_mode_ == ToolMode::AddEllipse) {
-        painter.drawEllipse(qr_ghost);
-      } else if (tool_mode_ == ToolMode::AddHierarchicalBlock) {
-        painter.drawRoundedRect(qr_ghost, 4.0, 4.0);
-        const double header_h = std::min(24.0, qr_ghost.height() * 0.3);
-        const QRectF b_rect(qr_ghost.x(), qr_ghost.y(), qr_ghost.width(), header_h);
-        painter.fillRect(b_rect, QColor(0x1E, 0x29, 0x3B, 90));
-        painter.setPen(QColor(0xFF, 0xFF, 0xFF, 220));
-        painter.drawText(b_rect, Qt::AlignCenter, "Candidate Subsystem");
-        painter.setPen(ghost_pen);
-      } else if (tool_mode_ == ToolMode::AddInputPort || tool_mode_ == ToolMode::AddOutputPort) {
-        const bool is_in = (tool_mode_ == ToolMode::AddInputPort);
+      const auto& cur_tmpl = is_drag_active_ ? drag_template_ : active_template_;
+
+      if (cur_tmpl.category == PlacementCategory::RegularPolygon) {
+        const int sides = std::max(3, cur_tmpl.polygon_sides);
+        const double r = std::min(qr_ghost.width(), qr_ghost.height()) * 0.5;
+        const double cx = qr_ghost.center().x();
+        const double cy = qr_ghost.center().y();
+        QPolygonF poly;
+        for (int i = 0; i < sides; ++i) {
+          const double rad = -std::numbers::pi / 2.0 + (2.0 * std::numbers::pi * i) / sides;
+          poly << QPointF(cx + r * std::cos(rad), cy + r * std::sin(rad));
+        }
+        painter.drawPolygon(poly);
+      } else if (cur_tmpl.category == PlacementCategory::CustomPolygon) {
+        if (!cur_tmpl.custom_vertices.empty()) {
+          QPolygonF poly;
+          for (const auto& pt : cur_tmpl.custom_vertices) {
+            poly << QPointF(qr_ghost.left() + pt.x * qr_ghost.width(),
+                            qr_ghost.top() + pt.y * qr_ghost.height());
+          }
+          painter.drawPolygon(poly);
+        } else {
+          painter.drawRect(qr_ghost);
+        }
+      } else if (cur_tmpl.category == PlacementCategory::HierarchicalPort) {
+        const bool is_in = cur_tmpl.is_input_port;
         QPolygonF badge;
         if (is_in) {
           badge << QPointF(qr_ghost.left(), qr_ghost.top())
@@ -5309,8 +5462,24 @@ void CanvasWidget::render_canvas() {
         painter.setBrush(is_in ? QColor(0x10, 0xB9, 0x81, 70) : QColor(0xF5, 0x9E, 0x0B, 70));
         painter.drawPolygon(badge);
         painter.setPen(Qt::white);
-        painter.drawText(qr_ghost, Qt::AlignCenter, is_in ? "Input Port" : "Output Port");
+        painter.drawText(qr_ghost, Qt::AlignCenter, QString::fromStdString(cur_tmpl.name.empty() ? (is_in ? "Input Port" : "Output Port") : cur_tmpl.name));
         painter.setPen(ghost_pen);
+      } else if (cur_tmpl.category == PlacementCategory::SubsystemBuiltin ||
+                 cur_tmpl.category == PlacementCategory::SubsystemFile ||
+                 (cur_tmpl.category == PlacementCategory::ShapeType && cur_tmpl.shape_type == core::ShapeType::HierarchicalBlock)) {
+        painter.drawRoundedRect(qr_ghost, 4.0, 4.0);
+        const double header_h = std::min(24.0, qr_ghost.height() * 0.3);
+        const QRectF b_rect(qr_ghost.x(), qr_ghost.y(), qr_ghost.width(), header_h);
+        painter.fillRect(b_rect, QColor(0x1E, 0x29, 0x3B, 90));
+        painter.setPen(QColor(0xFF, 0xFF, 0xFF, 220));
+        painter.drawText(b_rect, Qt::AlignCenter, QString::fromStdString(cur_tmpl.name.empty() ? "Candidate Subsystem" : cur_tmpl.name));
+        painter.setPen(ghost_pen);
+      } else if (cur_tmpl.category == PlacementCategory::ShapeType && cur_tmpl.shape_type == core::ShapeType::RoundedRect) {
+        painter.drawRoundedRect(qr_ghost, 8.0, 8.0);
+      } else if (cur_tmpl.category == PlacementCategory::ShapeType && cur_tmpl.shape_type == core::ShapeType::Ellipse) {
+        painter.drawEllipse(qr_ghost);
+      } else {
+        painter.drawRect(qr_ghost);
       }
 
       // Candidate cardinal connection ports (N, E, S, W)
@@ -5335,7 +5504,9 @@ void CanvasWidget::render_canvas() {
 
       // Floating Coordinate & Dimension Badge
       const bool is_aligned = !active_smart_guides_.empty();
-      const QString badge_str = QString("(%1, %2)  %3×%4%5")
+      const QString shape_label = QString::fromStdString(cur_tmpl.name.empty() ? "Shape" : cur_tmpl.name);
+      const QString badge_str = QString("%1: (%2, %3)  %4×%5%6")
+          .arg(shape_label)
           .arg(static_cast<int>(placement_preview_bounds_.center().x))
           .arg(static_cast<int>(placement_preview_bounds_.center().y))
           .arg(static_cast<int>(placement_preview_bounds_.width))
@@ -5500,7 +5671,7 @@ void CanvasWidget::render_canvas() {
             painter.fillRect(QRectF(1, sy0, ruler_sz - 1, sy1 - sy0), QColor(0x00, 0x78, 0xD4, 45));
           }
         }
-      } else if (is_placement_tool_active() && placement_preview_bounds_.is_valid() && placement_preview_bounds_.width > 0.0) {
+      } else if ((is_placement_tool_active() || is_drag_active_) && placement_preview_bounds_.is_valid() && placement_preview_bounds_.width > 0.0) {
         const auto stl = world_to_screen({placement_preview_bounds_.x, placement_preview_bounds_.y});
         const double sx0 = std::max(static_cast<double>(ruler_sz), stl.x);
         const double sx1 = std::min(static_cast<double>(width()), stl.x + placement_preview_bounds_.width * zoom_level_);
