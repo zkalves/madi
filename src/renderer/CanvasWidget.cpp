@@ -3404,6 +3404,17 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
 
     if (ht != hovered_handle_) {
       hovered_handle_ = ht;
+      if (is_parametric_point(ht)) {
+        setToolTip("Parametric Control Point: Drag to reshape (Hold Alt for symmetric modification)");
+      } else if (ht == HandleType::ParametricLineShaftTop || ht == HandleType::ParametricLineShaftBottom) {
+        setToolTip("Shaft Line: Drag to adjust shaft thickness (Hold Alt for symmetric modification)");
+      } else if (ht == HandleType::ParametricLineShoulder) {
+        setToolTip("Arrow Shoulder Line: Drag to move arrowhead base & stretch attached lines");
+      } else if (is_parametric_line(ht)) {
+        setToolTip("Attached Shape Line: Drag to move edge segment (Hold Alt for symmetric modification)");
+      } else {
+        setToolTip(QString());
+      }
       update();
     }
 
@@ -3436,21 +3447,17 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
       case HandleType::ParametricLineShaftTop:
       case HandleType::ParametricLineShaftBottom:
         setCursor(Qt::SizeVerCursor);
-        emit status_message_requested("Shaft Line: Drag to adjust shaft thickness (Hold Alt for symmetric modification)");
         break;
       case HandleType::ParametricLineShoulder:
         setCursor(Qt::SizeHorCursor);
-        emit status_message_requested("Arrow Shoulder Line: Drag to move arrowhead base & stretch attached lines");
         break;
       default:
         if (is_parametric_point(ht)) {
           setCursor(Qt::PointingHandCursor);
-          emit status_message_requested("Parametric Control Point: Drag to reshape (Hold Alt for symmetric modification)");
           break;
         }
         if (is_parametric_line(ht)) {
           setCursor(Qt::SizeAllCursor);
-          emit status_message_requested("Attached Shape Line: Drag to move edge segment (Hold Alt for symmetric modification)");
           break;
         }
         if (spatial_index_) {
