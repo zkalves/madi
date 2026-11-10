@@ -2832,6 +2832,147 @@ int main(int argc, char* argv[]) {
     std::cout << "[Test 37] Unified Mouse Pointer Placement and Drag-and-Drop passed successfully!" << std::endl;
   }
 
+  // 38. Test Symbol Instantiation Anchor & Drag-to-Resize Control Point
+  {
+    std::cout << "===> Testing Symbol Instantiation Anchor & Drag-to-Resize Control Point..." << std::endl;
+    vector::gui::MainWindow hwin;
+    hwin.resize(1024, 768);
+    auto* canvas = hwin.canvas();
+    assert(canvas != nullptr);
+    auto* graph = canvas->graph_model();
+    assert(graph != nullptr);
+    graph->clear();
+
+    // A: Test Node defaults and property persistence
+    vector::core::Node test_node;
+    assert(test_node.symbol_anchor().x == 0.0 && test_node.symbol_anchor().y == 0.0);
+    assert(test_node.symbol_resize_point().x == 1.0 && test_node.symbol_resize_point().y == 1.0);
+
+    test_node.set_symbol_anchor({0.0, 0.5});
+    test_node.set_symbol_resize_point({1.0, 1.0});
+    assert(test_node.symbol_anchor().x == 0.0 && test_node.symbol_anchor().y == 0.5);
+    assert(test_node.symbol_resize_point().x == 1.0 && test_node.symbol_resize_point().y == 1.0);
+
+    // B: Test SymbolEditorDialog anchor and resize configuration
+    const auto nid = graph->add_node(test_node);
+    auto* placed_node = graph->find_node(nid);
+    assert(placed_node != nullptr);
+
+    {
+      vector::gui::SymbolEditorDialog dlg(*placed_node, *graph, nullptr, &hwin);
+      dlg.refresh_preview();
+      dlg.apply_and_accept();
+    }
+    assert(placed_node->symbol_anchor().x == 0.0 && placed_node->symbol_anchor().y == 0.5);
+
+    // C: Test Interactive Drag-to-Resize Placement
+    vector::renderer::ShapePlacementTemplate tmpl;
+    tmpl.category = vector::renderer::PlacementCategory::ShapeType;
+    tmpl.shape_type = vector::core::ShapeType::Rectangle;
+    tmpl.name = "ResizedSymbol";
+    tmpl.width = 100.0;
+    tmpl.height = 50.0;
+    tmpl.anchor_point = {0.0, 0.0};
+    tmpl.resize_point = {1.0, 1.0};
+
+    canvas->start_shape_placement(tmpl);
+    assert(canvas->is_placement_tool_active());
+
+    // 1. Move to (100, 100)
+    const auto s_anchor = canvas->world_to_screen({100.0, 100.0});
+    const QPointF q_anchor(s_anchor.x, s_anchor.y);
+    QMouseEvent move1(QEvent::MouseMove, q_anchor, q_anchor, Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &move1);
+
+    // 2. Press at (100, 100) (pins anchor)
+    QMouseEvent press1(QEvent::MouseButtonPress, q_anchor, q_anchor, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &press1);
+
+    // 3. Drag to (300, 250) (stretch width = 200, height = 150)
+    const auto s_resize = canvas->world_to_screen({300.0, 250.0});
+    const QPointF q_resize(s_resize.x, s_resize.y);
+    QMouseEvent drag1(QEvent::MouseMove, q_resize, q_resize, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &drag1);
+
+    const auto& prev_bounds = canvas->placement_preview_bounds();
+    assert(prev_bounds.is_valid());
+    assert(std::abs(prev_bounds.width - 200.0) < 1.0);
+    assert(std::abs(prev_bounds.height - 150.0) < 1.0);
+    (void)prev_bounds;
+
+    // 4. Release at (300, 250) (finalizes instantiation)
+    QMouseEvent rel1(QEvent::MouseButtonRelease, q_resize, q_resize, Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &rel1);
+
+    assert(!canvas->is_placement_tool_active());
+    assert(graph->node_count() == 2);
+
+    const auto* new_node = graph->find_node(canvas->selected_nodes().front());
+    assert(new_node != nullptr);
+    assert(std::abs(new_node->bounds.width - 200.0) < 1.0);
+    assert(std::abs(new_node->bounds.height - 150.0) < 1.0);
+    assert(new_node->symbol_anchor().x == 0.0 && new_node->symbol_anchor().y == 0.0);
+    assert(new_node->symbol_resize_point().x == 1.0 && new_node->symbol_resize_point().y == 1.0);
+    (void)new_node;
+
+    // D: Test Shift-Constrained Aspect Ratio Locking
+    tmpl.name = "RatioLockedSymbol";
+    tmpl.width = 100.0;
+    tmpl.height = 50.0; // 2:1 aspect ratio
+    canvas->start_shape_placement(tmpl);
+
+    QMouseEvent press2(QEvent::MouseButtonPress, q_anchor, q_anchor, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &press2);
+
+    // Drag to (300, 250) with Shift (locked to 2:1 ratio -> width 200, height 100)
+    QMouseEvent drag2(QEvent::MouseMove, q_resize, q_resize, Qt::LeftButton, Qt::LeftButton, Qt::ShiftModifier);
+    QApplication::sendEvent(canvas, &drag2);
+
+    const auto& ratio_prev = canvas->placement_preview_bounds();
+    assert(std::abs(ratio_prev.width / ratio_prev.height - 2.0) < 1e-3);
+    (void)ratio_prev;
+
+    QMouseEvent rel2(QEvent::MouseButtonRelease, q_resize, q_resize, Qt::LeftButton, Qt::NoButton, Qt::ShiftModifier);
+    QApplication::sendEvent(canvas, &rel2);
+
+    const auto* locked_node = graph->find_node(canvas->selected_nodes().front());
+    assert(locked_node != nullptr);
+    assert(std::abs(locked_node->bounds.width / locked_node->bounds.height - 2.0) < 1e-3);
+    (void)locked_node;
+
+    // E: Test 2-Click Mode (Click anchor, move cursor, click to place)
+    tmpl.name = "TwoClickSymbol";
+    canvas->start_shape_placement(tmpl);
+
+    // Click 1 (press and release < 8px)
+    QMouseEvent c1_press(QEvent::MouseButtonPress, q_anchor, q_anchor, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &c1_press);
+    QMouseEvent c1_rel(QEvent::MouseButtonRelease, q_anchor, q_anchor, Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &c1_rel);
+
+    // Canvas stays in placement mode!
+    assert(canvas->is_placement_tool_active());
+
+    // Move to (400, 300)
+    const auto s_dest = canvas->world_to_screen({400.0, 300.0});
+    const QPointF q_dest(s_dest.x, s_dest.y);
+    QMouseEvent c_move(QEvent::MouseMove, q_dest, q_dest, Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &c_move);
+
+    // Click 2 to finalize
+    QMouseEvent c2_press(QEvent::MouseButtonPress, q_dest, q_dest, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &c2_press);
+
+    assert(!canvas->is_placement_tool_active());
+    const auto* two_click_node = graph->find_node(canvas->selected_nodes().front());
+    assert(two_click_node != nullptr);
+    assert(std::abs(two_click_node->bounds.width - 300.0) < 1.0);
+    assert(std::abs(two_click_node->bounds.height - 200.0) < 1.0);
+    (void)two_click_node;
+
+    std::cout << "[Test 38] Symbol Instantiation Anchor & Drag-to-Resize Control Point passed successfully!" << std::endl;
+  }
+
   std::cout << "===> All Theme System, Snapping & Hierarchical Port Smoke Tests passed successfully!" << std::endl;
   return 0;
 }

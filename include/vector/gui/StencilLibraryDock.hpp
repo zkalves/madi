@@ -456,7 +456,9 @@ public slots:
         break;
     }
 
-    add_shape_item(name + " (Copy)", stype, sides, "⭐ Custom Shapes", itype);
+    auto* item = add_shape_item(name + " (Copy)", stype, sides, "⭐ Custom Shapes", itype);
+    item->setData(0, Qt::UserRole + 4, QPointF(node->symbol_anchor().x, node->symbol_anchor().y));
+    item->setData(0, Qt::UserRole + 5, QPointF(node->symbol_resize_point().x, node->symbol_resize_point().y));
   }
 
 private:
@@ -849,6 +851,14 @@ public:
 
     // Unified pointer placement: attach any shape candidate to mouse pointer
     renderer::ShapePlacementTemplate tmpl = template_from_stencil_data(static_cast<int>(type), param, custom_name);
+    if (item->data(0, Qt::UserRole + 4).isValid()) {
+      const QPointF pt = item->data(0, Qt::UserRole + 4).toPointF();
+      tmpl.anchor_point = {pt.x(), pt.y()};
+    }
+    if (item->data(0, Qt::UserRole + 5).isValid()) {
+      const QPointF pt = item->data(0, Qt::UserRole + 5).toPointF();
+      tmpl.resize_point = {pt.x(), pt.y()};
+    }
     canvas_->start_shape_placement(tmpl);
   }
 
@@ -927,6 +937,14 @@ inline void StencilTreeWidget::mouseMoveEvent(QMouseEvent* event) {
   renderer::ShapePlacementTemplate tmpl = StencilLibraryDock::template_from_stencil_data(type, param, custom_name);
   if (tmpl.name.empty() && !title.isEmpty()) {
     tmpl.name = title.toStdString();
+  }
+  if (item->data(0, Qt::UserRole + 4).isValid()) {
+    const QPointF pt = item->data(0, Qt::UserRole + 4).toPointF();
+    tmpl.anchor_point = {pt.x(), pt.y()};
+  }
+  if (item->data(0, Qt::UserRole + 5).isValid()) {
+    const QPointF pt = item->data(0, Qt::UserRole + 5).toPointF();
+    tmpl.resize_point = {pt.x(), pt.y()};
   }
 
   const QByteArray item_data = renderer::serialize_placement_template(tmpl);

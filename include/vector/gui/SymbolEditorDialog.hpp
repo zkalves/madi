@@ -40,7 +40,9 @@ public:
 
   void set_symbol_info(const QString& name, double w, double h,
                        const QColor& fill, const QColor& stroke, const QColor& banner,
-                       const std::vector<std::tuple<QString, QString, QString, double>>& pins) {
+                       const std::vector<std::tuple<QString, QString, QString, double>>& pins,
+                       core::Vec2d anchor_pt = {0.0, 0.0},
+                       core::Vec2d resize_pt = {1.0, 1.0}) {
     name_ = name;
     symbol_w_ = w;
     symbol_h_ = h;
@@ -48,6 +50,8 @@ public:
     stroke_ = stroke;
     banner_ = banner;
     pins_ = pins;
+    anchor_pt_ = anchor_pt;
+    resize_pt_ = resize_pt;
     update();
   }
 
@@ -142,6 +146,30 @@ protected:
       p.setPen(QColor(0xD1, 0xD5, 0xDB));
       p.drawText(QRectF(lx, ly, 54.0, 16.0), align, pname);
     }
+
+    // Draw Anchor Point marker (green target crosshair)
+    const double ax = sx + anchor_pt_.x * sw;
+    const double ay = sy + anchor_pt_.y * sh;
+    p.setPen(QPen(QColor(0x10, 0xB9, 0x81), 2.0));
+    p.setBrush(QColor(0x10, 0xB9, 0x81, 120));
+    p.drawEllipse(QPointF(ax, ay), 5.0, 5.0);
+    p.drawLine(QPointF(ax - 8.0, ay), QPointF(ax + 8.0, ay));
+    p.drawLine(QPointF(ax, ay - 8.0), QPointF(ax, ay + 8.0));
+    p.setPen(QColor(0x10, 0xB9, 0x81));
+    p.setFont(QFont("sans-serif", 7, QFont::Bold));
+    p.drawText(QRectF(ax + 7.0, ay - 8.0, 100.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter, "Anchor");
+
+    // Draw Resize Control Point marker (cyan diamond handle with resize arrow)
+    const double rx = sx + resize_pt_.x * sw;
+    const double ry = sy + resize_pt_.y * sh;
+    QPolygonF diamond;
+    diamond << QPointF(rx, ry - 6.0) << QPointF(rx + 6.0, ry)
+            << QPointF(rx, ry + 6.0) << QPointF(rx - 6.0, ry);
+    p.setPen(QPen(QColor(0x00, 0xBC, 0xD4), 2.0));
+    p.setBrush(QColor(0x00, 0xBC, 0xD4, 160));
+    p.drawPolygon(diamond);
+    p.setPen(QColor(0x00, 0xBC, 0xD4));
+    p.drawText(QRectF(rx + 7.0, ry - 8.0, 100.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter, "Resize Point");
   }
 
 private:
@@ -152,6 +180,8 @@ private:
   QColor stroke_{0x7A, 0x88, 0xCF};
   QColor banner_{0x3B, 0x82, 0xF6};
   std::vector<std::tuple<QString, QString, QString, double>> pins_;
+  core::Vec2d anchor_pt_{0.0, 0.0};
+  core::Vec2d resize_pt_{1.0, 1.0};
 };
 
 class SymbolEditorDialog : public QDialog {
@@ -233,7 +263,68 @@ public:
 
     left_vbox->addWidget(grp_props);
 
-    // 2. Definition Synchronization & Drift Group (Inclusive Language)
+    // 2. Instantiation Anchor & Resize Control Point Group
+    auto* grp_inst = new QGroupBox("Instantiation Anchor & Resize Control Point", this);
+    auto* f_inst = new QFormLayout(grp_inst);
+
+    combo_anchor_preset_ = new QComboBox(this);
+    combo_anchor_preset_->addItem("Top-Left (0.0, 0.0)", QPointF(0.0, 0.0));
+    combo_anchor_preset_->addItem("Center (0.5, 0.5)", QPointF(0.5, 0.5));
+    combo_anchor_preset_->addItem("Bottom-Left (0.0, 1.0)", QPointF(0.0, 1.0));
+    combo_anchor_preset_->addItem("Top-Right (1.0, 0.0)", QPointF(1.0, 0.0));
+    combo_anchor_preset_->addItem("Middle-Left (0.0, 0.5)", QPointF(0.0, 0.5));
+    combo_anchor_preset_->addItem("Middle-Right (1.0, 0.5)", QPointF(1.0, 0.5));
+    combo_anchor_preset_->addItem("Custom Normalized...", QPointF(-1.0, -1.0));
+
+    spin_anchor_x_ = new QDoubleSpinBox(this);
+    spin_anchor_x_->setRange(0.0, 1.0);
+    spin_anchor_x_->setSingleStep(0.05);
+    spin_anchor_y_ = new QDoubleSpinBox(this);
+    spin_anchor_y_->setRange(0.0, 1.0);
+    spin_anchor_y_->setSingleStep(0.05);
+
+    const auto cur_anc = node.symbol_anchor();
+    spin_anchor_x_->setValue(cur_anc.x);
+    spin_anchor_y_->setValue(cur_anc.y);
+
+    auto* anchor_row = new QHBoxLayout();
+    anchor_row->addWidget(combo_anchor_preset_);
+    anchor_row->addWidget(new QLabel("X:"));
+    anchor_row->addWidget(spin_anchor_x_);
+    anchor_row->addWidget(new QLabel("Y:"));
+    anchor_row->addWidget(spin_anchor_y_);
+    f_inst->addRow("Anchor (Insertion Origin):", anchor_row);
+
+    combo_resize_preset_ = new QComboBox(this);
+    combo_resize_preset_->addItem("Bottom-Right (1.0, 1.0)", QPointF(1.0, 1.0));
+    combo_resize_preset_->addItem("Bottom-Center (0.5, 1.0)", QPointF(0.5, 1.0));
+    combo_resize_preset_->addItem("Middle-Right (1.0, 0.5)", QPointF(1.0, 0.5));
+    combo_resize_preset_->addItem("Top-Right (1.0, 0.0)", QPointF(1.0, 0.0));
+    combo_resize_preset_->addItem("Bottom-Left (0.0, 1.0)", QPointF(0.0, 1.0));
+    combo_resize_preset_->addItem("Custom Normalized...", QPointF(-1.0, -1.0));
+
+    spin_resize_x_ = new QDoubleSpinBox(this);
+    spin_resize_x_->setRange(0.0, 1.0);
+    spin_resize_x_->setSingleStep(0.05);
+    spin_resize_y_ = new QDoubleSpinBox(this);
+    spin_resize_y_->setRange(0.0, 1.0);
+    spin_resize_y_->setSingleStep(0.05);
+
+    const auto cur_res = node.symbol_resize_point();
+    spin_resize_x_->setValue(cur_res.x);
+    spin_resize_y_->setValue(cur_res.y);
+
+    auto* resize_row = new QHBoxLayout();
+    resize_row->addWidget(combo_resize_preset_);
+    resize_row->addWidget(new QLabel("X:"));
+    resize_row->addWidget(spin_resize_x_);
+    resize_row->addWidget(new QLabel("Y:"));
+    resize_row->addWidget(spin_resize_y_);
+    f_inst->addRow("Resize Control Point:", resize_row);
+
+    left_vbox->addWidget(grp_inst);
+
+    // 3. Definition Synchronization & Drift Group (Inclusive Language)
     auto* grp_sync = new QGroupBox("Definition Synchronization & Drift Mode", this);
     auto* v_sync = new QVBoxLayout(grp_sync);
 
@@ -381,6 +472,27 @@ private:
     connect(spin_w_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &SymbolEditorDialog::refresh_preview);
     connect(spin_h_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &SymbolEditorDialog::refresh_preview);
 
+    connect(spin_anchor_x_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &SymbolEditorDialog::refresh_preview);
+    connect(spin_anchor_y_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &SymbolEditorDialog::refresh_preview);
+    connect(spin_resize_x_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &SymbolEditorDialog::refresh_preview);
+    connect(spin_resize_y_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &SymbolEditorDialog::refresh_preview);
+
+    connect(combo_anchor_preset_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx) {
+      const QPointF pt = combo_anchor_preset_->itemData(idx).toPointF();
+      if (pt.x() >= 0.0 && pt.y() >= 0.0) {
+        spin_anchor_x_->setValue(pt.x());
+        spin_anchor_y_->setValue(pt.y());
+      }
+    });
+
+    connect(combo_resize_preset_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx) {
+      const QPointF pt = combo_resize_preset_->itemData(idx).toPointF();
+      if (pt.x() >= 0.0 && pt.y() >= 0.0) {
+        spin_resize_x_->setValue(pt.x());
+        spin_resize_y_->setValue(pt.y());
+      }
+    });
+
     connect(btn_color_banner_, &QPushButton::clicked, this, [this]() {
       QColor c = QColorDialog::getColor(banner_color_, this, "Select Header Banner Color");
       if (c.isValid()) { banner_color_ = c; refresh_preview(); }
@@ -498,15 +610,22 @@ private:
     refresh_preview();
   }
 
+public:
   void refresh_preview() {
     sync_pins_from_table();
     std::vector<std::tuple<QString, QString, QString, double>> preview_pins;
     for (const auto& p : pins_) {
       preview_pins.emplace_back(p.name, p.direction, p.side, p.normalized_pos);
     }
+    const core::Vec2d anc_pt = (spin_anchor_x_ && spin_anchor_y_)
+        ? core::Vec2d{spin_anchor_x_->value(), spin_anchor_y_->value()} : core::Vec2d{0.0, 0.0};
+    const core::Vec2d res_pt = (spin_resize_x_ && spin_resize_y_)
+        ? core::Vec2d{spin_resize_x_->value(), spin_resize_y_->value()} : core::Vec2d{1.0, 1.0};
+
     preview_widget_->set_symbol_info(
         txt_name_->text(), spin_w_->value(), spin_h_->value(),
-        fill_color_, stroke_color_, banner_color_, preview_pins);
+        fill_color_, stroke_color_, banner_color_, preview_pins,
+        anc_pt, res_pt);
   }
 
   void apply_and_accept() {
@@ -519,6 +638,13 @@ private:
     node_.properties["fill_color"] = fill_color_.name().toStdString();
     node_.properties["stroke_color"] = stroke_color_.name().toStdString();
     node_.properties["banner_color"] = banner_color_.name().toStdString();
+
+    if (spin_anchor_x_ && spin_anchor_y_) {
+      node_.set_symbol_anchor({spin_anchor_x_->value(), spin_anchor_y_->value()});
+    }
+    if (spin_resize_x_ && spin_resize_y_) {
+      node_.set_symbol_resize_point({spin_resize_x_->value(), spin_resize_y_->value()});
+    }
 
     const bool drift = rad_allow_drift_->isChecked();
     node_.properties["definition_sync_mode"] = drift ? "allow_drift" : "follow_primary";
@@ -597,6 +723,13 @@ private:
   QPushButton* btn_color_banner_{nullptr};
   QPushButton* btn_color_fill_{nullptr};
   QPushButton* btn_color_stroke_{nullptr};
+
+  QComboBox* combo_anchor_preset_{nullptr};
+  QDoubleSpinBox* spin_anchor_x_{nullptr};
+  QDoubleSpinBox* spin_anchor_y_{nullptr};
+  QComboBox* combo_resize_preset_{nullptr};
+  QDoubleSpinBox* spin_resize_x_{nullptr};
+  QDoubleSpinBox* spin_resize_y_{nullptr};
 
   QRadioButton* rad_follow_primary_{nullptr};
   QRadioButton* rad_allow_drift_{nullptr};

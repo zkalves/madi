@@ -67,6 +67,8 @@ struct ShapePlacementTemplate {
   bool is_input_port{true};
   std::string port_type{"in"};
   std::string file_path;
+  core::Vec2d anchor_point{0.0, 0.0}; // Normalized [0..1] insertion origin
+  core::Vec2d resize_point{1.0, 1.0}; // Normalized [0..1] stretch/control point
 };
 
 #ifdef VECTOR_ENABLE_QT
@@ -86,6 +88,8 @@ inline QByteArray serialize_placement_template(const ShapePlacementTemplate& tmp
   for (const auto& v : tmpl.custom_vertices) {
     stream << v.x << v.y;
   }
+  stream << tmpl.anchor_point.x << tmpl.anchor_point.y
+         << tmpl.resize_point.x << tmpl.resize_point.y;
   return bytes;
 }
 
@@ -117,6 +121,15 @@ inline bool deserialize_placement_template(const QByteArray& bytes, ShapePlaceme
       stream >> vx >> vy;
       out_tmpl.custom_vertices.push_back({vx, vy});
     }
+  }
+  if (!stream.atEnd()) {
+    double ax = 0.0, ay = 0.0, rx = 1.0, ry = 1.0;
+    stream >> ax >> ay >> rx >> ry;
+    out_tmpl.anchor_point = {ax, ay};
+    out_tmpl.resize_point = {rx, ry};
+  } else {
+    out_tmpl.anchor_point = {0.0, 0.0};
+    out_tmpl.resize_point = {1.0, 1.0};
   }
   return true;
 }
@@ -527,6 +540,7 @@ private:
   core::PortId find_hit_port(core::Vec2d world_pt, double tolerance, core::NodeId* out_node = nullptr) const;
   HandleType hit_test_handles(core::Vec2d screen_pt, core::NodeId* out_node = nullptr) const;
   void update_smart_alignment_guides(core::NodeId dragged_node);
+  void finalize_instantiation();
 
   core::GraphModel* graph_model_{nullptr};
   core::ISpatialIndex* spatial_index_{nullptr};
@@ -565,7 +579,8 @@ private:
     DraggingNodes,
     ResizingNode,
     RotatingNode,
-    WiringConnector
+    WiringConnector,
+    InstantiatingResize
   };
 
   InteractionState interaction_state_{InteractionState::None};
@@ -601,6 +616,10 @@ private:
   bool cardinal_snap_priority_{true};
   double cardinal_snap_tolerance_deg_{4.0};
   core::Rect2d placement_preview_bounds_{0.0, 0.0, 0.0, 0.0};
+  core::Vec2d instantiation_anchor_world_{0.0, 0.0};
+  core::Vec2d instantiation_press_screen_{0.0, 0.0};
+  bool instantiation_drag_active_{false};
+  bool instantiation_two_click_active_{false};
   ShapePlacementTemplate active_template_;
   ShapePlacementTemplate drag_template_;
   bool is_drag_active_{false};

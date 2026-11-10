@@ -246,6 +246,38 @@ struct Node {
     properties["subsystem_type"] = "file";
     properties["subsystem_file"] = path;
   }
+
+  [[nodiscard]] Vec2d symbol_anchor() const noexcept {
+    auto it_x = properties.find("symbol_anchor_x");
+    auto it_y = properties.find("symbol_anchor_y");
+    if (it_x != properties.end() && it_y != properties.end()) {
+      try {
+        return {std::stod(it_x->second), std::stod(it_y->second)};
+      } catch (...) {}
+    }
+    return {0.0, 0.0};
+  }
+
+  void set_symbol_anchor(Vec2d pt) {
+    properties["symbol_anchor_x"] = std::to_string(std::clamp(pt.x, 0.0, 1.0));
+    properties["symbol_anchor_y"] = std::to_string(std::clamp(pt.y, 0.0, 1.0));
+  }
+
+  [[nodiscard]] Vec2d symbol_resize_point() const noexcept {
+    auto it_x = properties.find("symbol_resize_x");
+    auto it_y = properties.find("symbol_resize_y");
+    if (it_x != properties.end() && it_y != properties.end()) {
+      try {
+        return {std::stod(it_x->second), std::stod(it_y->second)};
+      } catch (...) {}
+    }
+    return {1.0, 1.0};
+  }
+
+  void set_symbol_resize_point(Vec2d pt) {
+    properties["symbol_resize_x"] = std::to_string(std::clamp(pt.x, 0.0, 1.0));
+    properties["symbol_resize_y"] = std::to_string(std::clamp(pt.y, 0.0, 1.0));
+  }
 };
 
 enum class RoutingStyle : uint8_t { Orthogonal, Direct, CurvedBezier };

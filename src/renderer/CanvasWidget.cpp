@@ -181,29 +181,70 @@ void CanvasWidget::start_shape_placement(const ShapePlacementTemplate& tmpl) {
 }
 
 core::NodeId CanvasWidget::instantiate_template_at(const ShapePlacementTemplate& tmpl, core::Vec2d center_world) {
+  core::NodeId nid = core::InvalidNodeId;
   switch (tmpl.category) {
     case PlacementCategory::RegularPolygon:
-      return add_polygon(center_world, tmpl.polygon_sides, tmpl.name, false);
+      nid = add_polygon(center_world, tmpl.polygon_sides, tmpl.name, false);
+      break;
 
     case PlacementCategory::CustomPolygon:
-      return add_custom_polygon_shape(center_world, tmpl.custom_vertices, tmpl.name, tmpl.width, tmpl.height, false);
+      nid = add_custom_polygon_shape(center_world, tmpl.custom_vertices, tmpl.name, tmpl.width, tmpl.height, false);
+      break;
 
     case PlacementCategory::HierarchicalPort:
-      return add_hierarchical_port(center_world, tmpl.is_input_port, tmpl.port_type, false);
+      nid = add_hierarchical_port(center_world, tmpl.is_input_port, tmpl.port_type, false);
+      break;
 
     case PlacementCategory::SubsystemBuiltin:
-      return add_subsystem(center_world, tmpl.name, false);
+      nid = add_subsystem(center_world, tmpl.name, false);
+      break;
 
     case PlacementCategory::SubsystemFile:
-      return add_subsystem(center_world, tmpl.name, true, tmpl.file_path);
+      nid = add_subsystem(center_world, tmpl.name, true, tmpl.file_path);
+      break;
 
     case PlacementCategory::ShapeType:
     default:
       if (tmpl.shape_type == core::ShapeType::HierarchicalBlock) {
-        return add_subsystem(center_world, tmpl.name, false);
+        nid = add_subsystem(center_world, tmpl.name, false);
+      } else {
+        nid = add_shape(tmpl.shape_type, center_world, tmpl.name, false);
       }
-      return add_shape(tmpl.shape_type, center_world, tmpl.name, false);
+      break;
   }
+
+  if (nid != core::InvalidNodeId && graph_model_) {
+    if (auto* node = graph_model_->find_node(nid)) {
+      if (tmpl.width > 0.0 && tmpl.height > 0.0) {
+        node->bounds = {center_world.x - tmpl.width * 0.5, center_world.y - tmpl.height * 0.5, tmpl.width, tmpl.height};
+      }
+      node->set_symbol_anchor(tmpl.anchor_point);
+      node->set_symbol_resize_point(tmpl.resize_point);
+      if (spatial_index_) {
+        spatial_index_->update(nid, node->bounds);
+      }
+      emit diagram_modified();
+    }
+  }
+
+  return nid;
+}
+
+void CanvasWidget::finalize_instantiation() {
+  if (!is_placement_tool_active()) return;
+
+  core::Rect2d final_bounds = placement_preview_bounds_;
+  if (!final_bounds.is_valid() || final_bounds.width <= 0.0) {
+    final_bounds = get_placement_bounds(tool_mode_, instantiation_anchor_world_);
+  }
+
+  ShapePlacementTemplate tmpl = active_template_;
+  tmpl.width = final_bounds.width;
+  tmpl.height = final_bounds.height;
+
+  instantiate_template_at(tmpl, final_bounds.center());
+
+  cancel_placement();
 }
 
 core::PortId CanvasWidget::find_hit_port(core::Vec2d world_pt, double tolerance, core::NodeId* out_node) const {
@@ -2610,21 +2651,32 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
     return;
   }
 
-  // Handle placement of new shapes (Unified Shape Placement Engine)
+  // Handle placement of new shapes (Unified Shape Placement Engine with Drag-to-Resize)
   if (is_placement_tool_active()) {
-    core::Vec2d drop_pos = interaction_start_world_;
-    if (placement_preview_bounds_.is_valid() && placement_preview_bounds_.width > 0.0) {
-      drop_pos = placement_preview_bounds_.center();
-    } else {
-      core::Rect2d cand = get_placement_bounds(tool_mode_, interaction_start_world_);
-      core::Vec2d snap = compute_smart_alignment(core::InvalidNodeId, cand);
-      cand.x += snap.x;
-      cand.y += snap.y;
-      drop_pos = cand.center();
+    if (interaction_state_ == InteractionState::InstantiatingResize && instantiation_two_click_active_) {
+      finalize_instantiation();
+      event->accept();
+      return;
     }
 
-    instantiate_template_at(active_template_, drop_pos);
-    cancel_placement();
+    core::Vec2d anchor_pos = interaction_start_world_;
+    if (grid_manager_ && !(event->modifiers() & Qt::AltModifier)) {
+      auto snap_res = grid_manager_->resolve_snap(anchor_pos, *graph_model_, spatial_index_);
+      if (snap_res.snapped) {
+        anchor_pos = snap_res.snapped_point;
+      }
+    }
+
+    instantiation_anchor_world_ = anchor_pos;
+    instantiation_press_screen_ = {static_cast<double>(event->position().x()),
+                                   static_cast<double>(event->position().y())};
+    instantiation_drag_active_ = true;
+    instantiation_two_click_active_ = false;
+    interaction_state_ = InteractionState::InstantiatingResize;
+
+    placement_preview_bounds_ = get_placement_bounds(tool_mode_, anchor_pos);
+    update();
+    event->accept();
     return;
   }
 
@@ -2831,6 +2883,81 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
       }
     }
     update();
+  } else if (interaction_state_ == InteractionState::InstantiatingResize) {
+    core::Vec2d cursor_pt = current_world;
+    if (grid_manager_ && !(event->modifiers() & Qt::AltModifier)) {
+      auto snap_res = grid_manager_->resolve_snap(cursor_pt, *graph_model_, spatial_index_);
+      if (snap_res.snapped) {
+        cursor_pt = snap_res.snapped_point;
+      }
+    }
+
+    const double def_w = (active_template_.width > 0.0) ? active_template_.width : 120.0;
+    const double def_h = (active_template_.height > 0.0) ? active_template_.height : 70.0;
+    const bool keep_ratio = (event->modifiers() & Qt::ShiftModifier);
+
+    const core::Vec2d anc_norm = active_template_.anchor_point;
+    const core::Vec2d res_norm = active_template_.resize_point;
+
+    const double delta_ax = res_norm.x - anc_norm.x;
+    const double delta_ay = res_norm.y - anc_norm.y;
+
+    const double dx = cursor_pt.x - instantiation_anchor_world_.x;
+    const double dy = cursor_pt.y - instantiation_anchor_world_.y;
+
+    double w = def_w;
+    double h = def_h;
+
+    if (std::abs(delta_ax) > 1e-3) {
+      w = std::max(20.0, std::abs(dx / delta_ax));
+    }
+    if (std::abs(delta_ay) > 1e-3) {
+      h = std::max(20.0, std::abs(dy / delta_ay));
+    }
+
+    if (keep_ratio && def_h > 1e-3) {
+      const double aspect = def_w / def_h;
+      if (w / h > aspect) {
+        w = h * aspect;
+      } else {
+        h = w / aspect;
+      }
+      w = std::max(20.0, w);
+      h = std::max(20.0, h);
+    }
+
+    const bool rev_x = (delta_ax >= 0.0) ? (dx < 0.0) : (dx > 0.0);
+    const bool rev_y = (delta_ay >= 0.0) ? (dy < 0.0) : (dy > 0.0);
+
+    const double x = rev_x ? (instantiation_anchor_world_.x - (1.0 - anc_norm.x) * w)
+                           : (instantiation_anchor_world_.x - anc_norm.x * w);
+    const double y = rev_y ? (instantiation_anchor_world_.y - (1.0 - anc_norm.y) * h)
+                           : (instantiation_anchor_world_.y - anc_norm.y * h);
+
+    placement_preview_bounds_ = {x, y, w, h};
+
+    if (!(event->modifiers() & Qt::AltModifier)) {
+      core::Vec2d snap_offset = compute_smart_alignment(core::InvalidNodeId, placement_preview_bounds_);
+      placement_preview_bounds_.x += snap_offset.x;
+      placement_preview_bounds_.y += snap_offset.y;
+    } else {
+      active_smart_guides_.clear();
+    }
+
+    setCursor(Qt::SizeFDiagCursor);
+    const bool is_aligned = !active_smart_guides_.empty();
+
+    emit cursor_position_changed(QString("Instantiating: %1×%2 mm  |  (%3, %4)%5%6")
+        .arg(static_cast<int>(w * 0.264583))
+        .arg(static_cast<int>(h * 0.264583))
+        .arg(static_cast<int>(cursor_pt.x))
+        .arg(static_cast<int>(cursor_pt.y))
+        .arg(keep_ratio ? " [Shift: Ratio Locked]" : "")
+        .arg(is_aligned ? " [Aligned]" : ""));
+
+    last_mouse_screen_ = current_screen;
+    update();
+    return;
   } else if (interaction_state_ == InteractionState::ResizingNode) {
     if (graph_model_ && active_handle_node_ != core::InvalidNodeId) {
       if (auto* node = graph_model_->find_node(active_handle_node_)) {
@@ -3234,6 +3361,19 @@ void CanvasWidget::mouseReleaseEvent(QMouseEvent* event) {
     if (interaction_state_ == InteractionState::Panning) {
       interaction_state_ = InteractionState::None;
       setCursor(Qt::OpenHandCursor);
+      return;
+    }
+  }
+
+  if (interaction_state_ == InteractionState::InstantiatingResize) {
+    const core::Vec2d cur_scr = last_mouse_screen_;
+    const double drag_dist = (cur_scr - instantiation_press_screen_).length();
+    if (drag_dist >= 8.0) {
+      finalize_instantiation();
+      return;
+    } else {
+      instantiation_drag_active_ = false;
+      instantiation_two_click_active_ = true;
       return;
     }
   }
@@ -3844,6 +3984,7 @@ void CanvasWidget::rotate_selected(double) {}
 void CanvasWidget::set_selected_nodes_rotation(double) {}
 void CanvasWidget::set_node_rotation(core::NodeId, double) {}
 double CanvasWidget::get_node_rotation(core::NodeId) const { return 0.0; }
+void CanvasWidget::finalize_instantiation() {}
 #endif
 
 bool CanvasWidget::is_placement_tool_active() const noexcept {
@@ -3863,6 +4004,7 @@ bool CanvasWidget::is_polygon_drawing_active() const noexcept {
 core::Rect2d CanvasWidget::get_placement_bounds(ToolMode mode, core::Vec2d center_world) const {
   double w = 120.0;
   double h = 70.0;
+  const auto anchor = active_template_.anchor_point;
   if (mode == ToolMode::AddCustomShape && active_template_.width > 0.0 && active_template_.height > 0.0) {
     w = active_template_.width;
     h = active_template_.height;
@@ -3890,13 +4032,16 @@ core::Rect2d CanvasWidget::get_placement_bounds(ToolMode mode, core::Vec2d cente
         break;
     }
   }
-  return {center_world.x - w * 0.5, center_world.y - h * 0.5, w, h};
+  return {center_world.x - anchor.x * w, center_world.y - anchor.y * h, w, h};
 }
 
 void CanvasWidget::cancel_placement() {
   placement_preview_bounds_ = {0.0, 0.0, 0.0, 0.0};
   active_smart_guides_.clear();
   in_progress_polygon_points_.clear();
+  interaction_state_ = InteractionState::None;
+  instantiation_drag_active_ = false;
+  instantiation_two_click_active_ = false;
   set_tool_mode(ToolMode::Select);
 #ifdef VECTOR_ENABLE_QT
   update();
@@ -5502,10 +5647,38 @@ void CanvasWidget::render_canvas() {
       painter.drawLine(QPointF(ccx - 8.0, ccy), QPointF(ccx + 8.0, ccy));
       painter.drawLine(QPointF(ccx, ccy - 8.0), QPointF(ccx, ccy + 8.0));
 
+      // Candidate Anchor Point Marker (Green crosshair)
+      const double g_anc_x = qr_ghost.left() + cur_tmpl.anchor_point.x * qr_ghost.width();
+      const double g_anc_y = qr_ghost.top() + cur_tmpl.anchor_point.y * qr_ghost.height();
+      painter.setPen(QPen(QColor(0x10, 0xB9, 0x81), 2.0));
+      painter.setBrush(QColor(0x10, 0xB9, 0x81, 140));
+      painter.drawEllipse(QPointF(g_anc_x, g_anc_y), 4.5, 4.5);
+      painter.drawLine(QPointF(g_anc_x - 6.0, g_anc_y), QPointF(g_anc_x + 6.0, g_anc_y));
+      painter.drawLine(QPointF(g_anc_x, g_anc_y - 6.0), QPointF(g_anc_x, g_anc_y + 6.0));
+
+      // Candidate Resize Control Point Handle (Cyan diamond)
+      const double g_res_x = qr_ghost.left() + cur_tmpl.resize_point.x * qr_ghost.width();
+      const double g_res_y = qr_ghost.top() + cur_tmpl.resize_point.y * qr_ghost.height();
+      QPolygonF res_diamond;
+      res_diamond << QPointF(g_res_x, g_res_y - 6.0)
+                  << QPointF(g_res_x + 6.0, g_res_y)
+                  << QPointF(g_res_x, g_res_y + 6.0)
+                  << QPointF(g_res_x - 6.0, g_res_y);
+      painter.setPen(QPen(QColor(0x00, 0xBC, 0xD4), 2.0));
+      painter.setBrush(QColor(0x00, 0xBC, 0xD4, 180));
+      painter.drawPolygon(res_diamond);
+
+      if (interaction_state_ == InteractionState::InstantiatingResize) {
+        painter.setPen(QPen(QColor(0x00, 0xBC, 0xD4, 180), 1.5, Qt::DashLine));
+        painter.drawLine(QPointF(g_anc_x, g_anc_y), QPointF(g_res_x, g_res_y));
+      }
+
       // Floating Coordinate & Dimension Badge
       const bool is_aligned = !active_smart_guides_.empty();
+      const bool is_resizing = (interaction_state_ == InteractionState::InstantiatingResize);
       const QString shape_label = QString::fromStdString(cur_tmpl.name.empty() ? "Shape" : cur_tmpl.name);
-      const QString badge_str = QString("%1: (%2, %3)  %4×%5%6")
+      const QString badge_str = QString("%1%2: (%3, %4)  %5×%6%7")
+          .arg(is_resizing ? "[Resizing] " : "")
           .arg(shape_label)
           .arg(static_cast<int>(placement_preview_bounds_.center().x))
           .arg(static_cast<int>(placement_preview_bounds_.center().y))
