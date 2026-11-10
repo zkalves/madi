@@ -2791,6 +2791,16 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
       }
       update();
       return;
+    } else if (is_parametric_handle(hit_handle)) {
+      active_handle_ = hit_handle;
+      active_handle_node_ = handle_node;
+      interaction_state_ = InteractionState::DraggingParametricHandle;
+      if (const auto* n = graph_model_->find_node(handle_node)) {
+        parametric_initial_vertices_ = n->polygon_vertices;
+        parametric_initial_props_ = n->properties;
+      }
+      update();
+      return;
     } else {
       active_handle_ = hit_handle;
       active_handle_node_ = handle_node;
@@ -2958,6 +2968,31 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
     last_mouse_screen_ = current_screen;
     update();
     return;
+  } else if (interaction_state_ == InteractionState::DraggingParametricHandle) {
+    if (graph_model_ && active_handle_node_ != core::InvalidNodeId) {
+      if (auto* node = graph_model_->find_node(active_handle_node_)) {
+        core::Vec2d unrot_cursor = current_world;
+        if (std::abs(node->rotation_deg) > 1e-4) {
+          const core::Vec2d center = node->bounds.center();
+          const double rad = -node->rotation_deg * (std::numbers::pi / 180.0);
+          const double cos_a = std::cos(rad);
+          const double sin_a = std::sin(rad);
+          const double dx = current_world.x - center.x;
+          const double dy = current_world.y - center.y;
+          unrot_cursor = {center.x + dx * cos_a - dy * sin_a, center.y + dx * sin_a + dy * cos_a};
+        }
+
+        const bool symmetric = (event->modifiers() & Qt::AltModifier);
+        apply_parametric_drag(*node, active_handle_, unrot_cursor, symmetric);
+        if (spatial_index_) {
+          spatial_index_->update(active_handle_node_, node->bounds);
+        }
+        emit diagram_modified();
+        last_mouse_screen_ = current_screen;
+        update();
+        return;
+      }
+    }
   } else if (interaction_state_ == InteractionState::ResizingNode) {
     if (graph_model_ && active_handle_node_ != core::InvalidNodeId) {
       if (auto* node = graph_model_->find_node(active_handle_node_)) {
@@ -3326,6 +3361,26 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
       case HandleType::QuickConnectWest:
         setCursor(Qt::CrossCursor);
         break;
+      case HandleType::ParametricPoint0:
+      case HandleType::ParametricPoint1:
+      case HandleType::ParametricPoint2:
+      case HandleType::ParametricPoint3:
+      case HandleType::ParametricPoint4:
+      case HandleType::ParametricPoint5:
+      case HandleType::ParametricPoint6:
+      case HandleType::ParametricPoint7:
+        setCursor(Qt::PointingHandCursor);
+        emit status_message_requested("Parametric Control Point: Drag to reshape (Hold Alt for symmetric modification)");
+        break;
+      case HandleType::ParametricLineShaftTop:
+      case HandleType::ParametricLineShaftBottom:
+        setCursor(Qt::SizeVerCursor);
+        emit status_message_requested("Shaft Line: Drag to adjust shaft thickness (Hold Alt for symmetric modification)");
+        break;
+      case HandleType::ParametricLineShoulder:
+        setCursor(Qt::SizeHorCursor);
+        emit status_message_requested("Arrow Shoulder Line: Drag to move arrowhead base & stretch attached lines");
+        break;
       default:
         if (spatial_index_) {
           auto hits = spatial_index_->query_point(current_world);
@@ -3376,6 +3431,25 @@ void CanvasWidget::mouseReleaseEvent(QMouseEvent* event) {
       instantiation_two_click_active_ = true;
       return;
     }
+  }
+
+  if (interaction_state_ == InteractionState::DraggingParametricHandle) {
+    if (command_history_ && graph_model_ && active_handle_node_ != core::InvalidNodeId) {
+      if (const auto* n = graph_model_->find_node(active_handle_node_)) {
+        if (n->polygon_vertices != parametric_initial_vertices_ || n->properties != parametric_initial_props_) {
+          command_history_->execute(std::make_unique<core::ModifyShapeGeometryCommand>(
+              *graph_model_, active_handle_node_,
+              parametric_initial_vertices_, n->polygon_vertices,
+              parametric_initial_props_, n->properties));
+          emit diagram_modified();
+        }
+      }
+    }
+    interaction_state_ = InteractionState::None;
+    active_handle_ = HandleType::None;
+    active_handle_node_ = core::InvalidNodeId;
+    update();
+    return;
   }
 
   if (interaction_state_ == InteractionState::WiringConnector) {
@@ -3932,6 +4006,104 @@ void CanvasWidget::dropEvent(QDropEvent* event) {
     event->ignore();
   }
 }
+
+void CanvasWidget::apply_parametric_drag(core::Node& node, HandleType handle, core::Vec2d unrot_cursor, bool symmetric) {
+  const double bw = std::max(1.0, node.bounds.width);
+  const double bh = std::max(1.0, node.bounds.height);
+  const double nx = std::clamp((unrot_cursor.x - node.bounds.x) / bw, 0.0, 1.0);
+  const double ny = std::clamp((unrot_cursor.y - node.bounds.y) / bh, 0.0, 1.0);
+
+  const auto kind = core::get_parametric_kind(node);
+  if (kind == core::ParametricShapeKind::Arrow && node.polygon_vertices.size() == 7) {
+    double sx = node.polygon_vertices[1].x;
+    double sy0 = node.polygon_vertices[0].y;
+    double sy1 = node.polygon_vertices[6].y;
+    double hy0 = node.polygon_vertices[2].y;
+    double hy1 = node.polygon_vertices[4].y;
+    double tx = node.polygon_vertices[3].x;
+    double ty = node.polygon_vertices[3].y;
+
+    if (handle == HandleType::ParametricPoint0) {
+      sx = std::clamp(nx, 0.1, tx - 0.05);
+      sy0 = std::clamp(ny, hy0 + 0.02, 0.49);
+      if (symmetric) sy1 = 1.0 - sy0;
+    } else if (handle == HandleType::ParametricPoint1) {
+      sx = std::clamp(nx, 0.1, tx - 0.05);
+      sy1 = std::clamp(ny, 0.51, hy1 - 0.02);
+      if (symmetric) sy0 = 1.0 - sy1;
+    } else if (handle == HandleType::ParametricPoint2) {
+      hy0 = std::clamp(ny, 0.0, sy0 - 0.02);
+      if (symmetric) hy1 = 1.0 - hy0;
+    } else if (handle == HandleType::ParametricPoint3) {
+      hy1 = std::clamp(ny, sy1 + 0.02, 1.0);
+      if (symmetric) hy0 = 1.0 - hy1;
+    } else if (handle == HandleType::ParametricPoint4) {
+      tx = std::clamp(nx, sx + 0.05, 1.0);
+      if (!symmetric) ty = std::clamp(ny, 0.1, 0.9);
+      else ty = 0.5;
+    } else if (handle == HandleType::ParametricLineShoulder) {
+      sx = std::clamp(nx, 0.1, tx - 0.05);
+    } else if (handle == HandleType::ParametricLineShaftTop) {
+      sy0 = std::clamp(ny, hy0 + 0.02, 0.49);
+      if (symmetric) sy1 = 1.0 - sy0;
+    } else if (handle == HandleType::ParametricLineShaftBottom) {
+      sy1 = std::clamp(ny, 0.51, hy1 - 0.02);
+      if (symmetric) sy0 = 1.0 - sy1;
+    }
+
+    node.polygon_vertices[0] = {0.0, sy0};
+    node.polygon_vertices[1] = {sx, sy0};
+    node.polygon_vertices[2] = {sx, hy0};
+    node.polygon_vertices[3] = {tx, ty};
+    node.polygon_vertices[4] = {sx, hy1};
+    node.polygon_vertices[5] = {sx, sy1};
+    node.polygon_vertices[6] = {0.0, sy1};
+
+    node.properties["parametric_type"] = "arrow";
+    node.properties["arrow_shoulder_x"] = std::to_string(sx);
+    node.properties["arrow_shaft_y0"] = std::to_string(sy0);
+    node.properties["arrow_shaft_y1"] = std::to_string(sy1);
+    node.properties["arrow_head_y0"] = std::to_string(hy0);
+    node.properties["arrow_head_y1"] = std::to_string(hy1);
+  } else if (kind == core::ParametricShapeKind::Trapezoid && node.polygon_vertices.size() == 4) {
+    const double inset = std::clamp(nx, 0.0, 0.45);
+    node.polygon_vertices[0] = {inset, 0.0};
+    if (symmetric) {
+      node.polygon_vertices[1] = {1.0 - inset, 0.0};
+    }
+    node.properties["parametric_type"] = "trapezoid";
+  } else if (kind == core::ParametricShapeKind::Star && node.polygon_vertices.size() == 10) {
+    const double dx = nx - 0.5;
+    const double dy = ny - 0.5;
+    const double inner_r = std::clamp(std::sqrt(dx * dx + dy * dy), 0.1, 0.45);
+    for (int i = 0; i < 10; ++i) {
+      const double r = (i % 2 == 0) ? 0.5 : inner_r;
+      const double rad = -std::numbers::pi / 2.0 + (std::numbers::pi * i) / 5.0;
+      node.polygon_vertices[i] = {0.5 + r * std::cos(rad), 0.5 + r * std::sin(rad)};
+    }
+    node.properties["parametric_type"] = "star";
+  } else if (kind == core::ParametricShapeKind::Cross && node.polygon_vertices.size() == 12) {
+    const double arm_t = std::clamp(nx, 0.1, 0.45);
+    node.polygon_vertices[0] = {arm_t, 0.0};
+    node.polygon_vertices[1] = {1.0 - arm_t, 0.0};
+    node.polygon_vertices[2] = {1.0 - arm_t, arm_t};
+    node.polygon_vertices[3] = {1.0, arm_t};
+    node.polygon_vertices[4] = {1.0, 1.0 - arm_t};
+    node.polygon_vertices[5] = {1.0 - arm_t, 1.0 - arm_t};
+    node.polygon_vertices[6] = {1.0 - arm_t, 1.0};
+    node.polygon_vertices[7] = {arm_t, 1.0};
+    node.polygon_vertices[8] = {arm_t, 1.0 - arm_t};
+    node.polygon_vertices[9] = {0.0, 1.0 - arm_t};
+    node.polygon_vertices[10] = {0.0, arm_t};
+    node.polygon_vertices[11] = {arm_t, arm_t};
+    node.properties["parametric_type"] = "cross";
+  } else if (kind == core::ParametricShapeKind::GenericPolygon && !node.polygon_vertices.empty()) {
+    int idx = static_cast<int>(static_cast<uint8_t>(handle) - static_cast<uint8_t>(HandleType::ParametricPoint0));
+    if (idx >= 0 && idx < static_cast<int>(node.polygon_vertices.size())) {
+      node.polygon_vertices[idx] = {nx, ny};
+    }
+  }
+}
 #else
 CanvasWidget::CanvasWidget()
     : renderer_(std::make_unique<CanvasRenderer>()) {}
@@ -3985,6 +4157,7 @@ void CanvasWidget::set_selected_nodes_rotation(double) {}
 void CanvasWidget::set_node_rotation(core::NodeId, double) {}
 double CanvasWidget::get_node_rotation(core::NodeId) const { return 0.0; }
 void CanvasWidget::finalize_instantiation() {}
+void CanvasWidget::apply_parametric_drag(core::Node&, HandleType, core::Vec2d, bool) {}
 #endif
 
 bool CanvasWidget::is_placement_tool_active() const noexcept {
@@ -4273,6 +4446,47 @@ HandleType CanvasWidget::hit_test_handles(core::Vec2d screen_pt, core::NodeId* o
   };
 
   const double handle_hs = 5.5;
+
+  // 0. Parametric Handles (Points & Attached Lines)
+  const auto p_kind = core::get_parametric_kind(*node);
+  if (p_kind != core::ParametricShapeKind::None) {
+    const auto p_handles = core::get_parametric_handles(*node);
+    for (const auto& ph : p_handles) {
+      const double px = x0 + ph.normalized_pos.x * sw;
+      const double py = y0 + ph.normalized_pos.y * sh;
+      if (hit_circle(px, py, 7.5)) {
+        return static_cast<HandleType>(static_cast<uint8_t>(HandleType::ParametricPoint0) + ph.id);
+      }
+    }
+
+    if (p_kind == core::ParametricShapeKind::Arrow && node->polygon_vertices.size() == 7) {
+      auto dist_to_seg = [](core::Vec2d p, core::Vec2d a, core::Vec2d b) {
+        const double l2 = a.distance_sq_to(b);
+        if (l2 < 1e-6) return p.distance_to(a);
+        const double t = std::clamp(((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2, 0.0, 1.0);
+        const core::Vec2d proj = {a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)};
+        return p.distance_to(proj);
+      };
+
+      const auto& pv = node->polygon_vertices;
+      const core::Vec2d p0_s = {x0 + pv[0].x * sw, y0 + pv[0].y * sh};
+      const core::Vec2d p1_s = {x0 + pv[1].x * sw, y0 + pv[1].y * sh};
+      const core::Vec2d p2_s = {x0 + pv[2].x * sw, y0 + pv[2].y * sh};
+      const core::Vec2d p4_s = {x0 + pv[4].x * sw, y0 + pv[4].y * sh};
+      const core::Vec2d p5_s = {x0 + pv[5].x * sw, y0 + pv[5].y * sh};
+      const core::Vec2d p6_s = {x0 + pv[6].x * sw, y0 + pv[6].y * sh};
+
+      if (dist_to_seg(test_pt, p2_s, p4_s) <= 5.5) {
+        return HandleType::ParametricLineShoulder;
+      }
+      if (dist_to_seg(test_pt, p0_s, p1_s) <= 5.5) {
+        return HandleType::ParametricLineShaftTop;
+      }
+      if (dist_to_seg(test_pt, p5_s, p6_s) <= 5.5) {
+        return HandleType::ParametricLineShaftBottom;
+      }
+    }
+  }
 
   // 1. Rotation Stalk Lollipop Handle (22px above TopCenter)
   if (hit_circle(xc, y0 - 22.0, 7.5)) {
@@ -5504,6 +5718,64 @@ void CanvasWidget::render_canvas() {
         draw_qc_arrow(HandleType::QuickConnectEast, QPointF(x1 + 16.0, yc), 90.0);
         draw_qc_arrow(HandleType::QuickConnectSouth, QPointF(xc, y1 + 16.0), 180.0);
         draw_qc_arrow(HandleType::QuickConnectWest, QPointF(x0 - 16.0, yc), 270.0);
+
+        // 5. Parametric shape handles (amber diamonds & line highlights)
+        const auto p_kind = core::get_parametric_kind(*sel_node);
+        if (p_kind != core::ParametricShapeKind::None) {
+          if (p_kind == core::ParametricShapeKind::Arrow && sel_node->polygon_vertices.size() == 7) {
+            const auto& pv = sel_node->polygon_vertices;
+            const QPointF p0_s(x0 + pv[0].x * sw, y0 + pv[0].y * sh);
+            const QPointF p1_s(x0 + pv[1].x * sw, y0 + pv[1].y * sh);
+            const QPointF p2_s(x0 + pv[2].x * sw, y0 + pv[2].y * sh);
+            const QPointF p4_s(x0 + pv[4].x * sw, y0 + pv[4].y * sh);
+            const QPointF p5_s(x0 + pv[5].x * sw, y0 + pv[5].y * sh);
+            const QPointF p6_s(x0 + pv[6].x * sw, y0 + pv[6].y * sh);
+
+            const bool sh_hov = (hovered_handle_ == HandleType::ParametricLineShoulder ||
+                                 (interaction_state_ == InteractionState::DraggingParametricHandle && active_handle_ == HandleType::ParametricLineShoulder));
+            const bool st_hov = (hovered_handle_ == HandleType::ParametricLineShaftTop ||
+                                 (interaction_state_ == InteractionState::DraggingParametricHandle && active_handle_ == HandleType::ParametricLineShaftTop));
+            const bool sb_hov = (hovered_handle_ == HandleType::ParametricLineShaftBottom ||
+                                 (interaction_state_ == InteractionState::DraggingParametricHandle && active_handle_ == HandleType::ParametricLineShaftBottom));
+
+            if (sh_hov) {
+              painter.setPen(QPen(QColor(0xFB, 0xBF, 0x24), 3.0, Qt::DashLine));
+              painter.drawLine(p2_s, p4_s);
+            }
+            if (st_hov) {
+              painter.setPen(QPen(QColor(0xFB, 0xBF, 0x24), 3.0, Qt::DashLine));
+              painter.drawLine(p0_s, p1_s);
+            }
+            if (sb_hov) {
+              painter.setPen(QPen(QColor(0xFB, 0xBF, 0x24), 3.0, Qt::DashLine));
+              painter.drawLine(p5_s, p6_s);
+            }
+          }
+
+          const auto p_handles = core::get_parametric_handles(*sel_node);
+          for (const auto& ph : p_handles) {
+            const double hx = x0 + ph.normalized_pos.x * sw;
+            const double hy = y0 + ph.normalized_pos.y * sh;
+
+            const HandleType target_h = static_cast<HandleType>(static_cast<uint8_t>(HandleType::ParametricPoint0) + ph.id);
+            const bool is_hov = (hovered_handle_ == target_h);
+            const bool is_act = (interaction_state_ == InteractionState::DraggingParametricHandle && active_handle_ == target_h);
+
+            const double hsz = (is_hov || is_act) ? 6.5 : 5.0;
+            QPolygonF diamond;
+            diamond << QPointF(hx, hy - hsz)
+                    << QPointF(hx + hsz, hy)
+                    << QPointF(hx, hy + hsz)
+                    << QPointF(hx - hsz, hy);
+
+            painter.setBrush((is_hov || is_act) ? QColor(0xFB, 0xBF, 0x24) : QColor(0xF5, 0x9E, 0x0B));
+            painter.setPen(QPen(QColor(0x78, 0x35, 0x0F), (is_hov || is_act) ? 2.0 : 1.5));
+            painter.drawPolygon(diamond);
+
+            painter.setPen(QPen(QColor(0xFF, 0xFF, 0xFF, 220), 1.0));
+            painter.drawPoint(QPointF(hx, hy));
+          }
+        }
 
         if (is_sel_rotated) {
           painter.restore();

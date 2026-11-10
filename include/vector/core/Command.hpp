@@ -275,6 +275,62 @@ private:
   std::string description_;
 };
 
+class ModifyShapeGeometryCommand : public ICommand {
+public:
+  ModifyShapeGeometryCommand(
+      GraphModel& model,
+      NodeId node_id,
+      std::vector<Vec2d> old_vertices,
+      std::vector<Vec2d> new_vertices,
+      std::unordered_map<std::string, std::string> old_props,
+      std::unordered_map<std::string, std::string> new_props,
+      std::string description = "Modify Shape Geometry")
+    : model_(model),
+      node_id_(node_id),
+      old_vertices_(std::move(old_vertices)),
+      new_vertices_(std::move(new_vertices)),
+      old_props_(std::move(old_props)),
+      new_props_(std::move(new_props)),
+      description_(std::move(description)) {}
+
+  bool execute() override {
+    if (auto* n = model_.find_node(node_id_)) {
+      n->polygon_vertices = new_vertices_;
+      for (const auto& [k, v] : new_props_) {
+        n->properties[k] = v;
+      }
+      model_.update_all_edge_routes();
+      return true;
+    }
+    return false;
+  }
+
+  bool undo() override {
+    if (auto* n = model_.find_node(node_id_)) {
+      n->polygon_vertices = old_vertices_;
+      for (const auto& [k, v] : old_props_) {
+        n->properties[k] = v;
+      }
+      model_.update_all_edge_routes();
+      return true;
+    }
+    return false;
+  }
+
+  [[nodiscard]] std::string description() const override {
+    return description_;
+  }
+
+private:
+  GraphModel& model_;
+  NodeId node_id_{InvalidNodeId};
+  std::vector<Vec2d> old_vertices_;
+  std::vector<Vec2d> new_vertices_;
+  std::unordered_map<std::string, std::string> old_props_;
+  std::unordered_map<std::string, std::string> new_props_;
+  std::string description_;
+};
+
 class ChangeZOrderCommand : public ICommand {
 public:
   ChangeZOrderCommand(GraphModel& model,

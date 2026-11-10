@@ -10,6 +10,7 @@
 #include "../core/HierarchicalBlock.hpp"
 #include "../core/SpatialIndex.hpp"
 #include "../core/Command.hpp"
+#include "../core/ParametricShape.hpp"
 #include "../grid/GridManager.hpp"
 
 #ifdef VECTOR_ENABLE_QT
@@ -209,8 +210,24 @@ enum class HandleType : uint8_t {
   QuickConnectNorth,
   QuickConnectEast,
   QuickConnectSouth,
-  QuickConnectWest
+  QuickConnectWest,
+  ParametricPoint0,
+  ParametricPoint1,
+  ParametricPoint2,
+  ParametricPoint3,
+  ParametricPoint4,
+  ParametricPoint5,
+  ParametricPoint6,
+  ParametricPoint7,
+  ParametricLineShaftTop,
+  ParametricLineShaftBottom,
+  ParametricLineShoulder
 };
+
+inline bool is_parametric_handle(HandleType h) noexcept {
+  return static_cast<uint8_t>(h) >= static_cast<uint8_t>(HandleType::ParametricPoint0) &&
+         static_cast<uint8_t>(h) <= static_cast<uint8_t>(HandleType::ParametricLineShoulder);
+}
 
 enum class WireCrossingStyle : uint8_t {
   DotPriority,        // Style 1 (Modern EDA): Wires that cross do not connect unless there is a junction ball/dot
@@ -291,6 +308,7 @@ public:
 
   // Interactive Point-and-Click Polygon Creation
   [[nodiscard]] const std::vector<core::Vec2d>& in_progress_polygon_points() const noexcept { return in_progress_polygon_points_; }
+  [[nodiscard]] HandleType hit_test_handles(core::Vec2d screen_pt, core::NodeId* out_node = nullptr) const;
   bool finish_polygon_creation();
   void cancel_polygon_creation();
 
@@ -538,9 +556,9 @@ private:
   void update_lod_state();
   void render_canvas();
   core::PortId find_hit_port(core::Vec2d world_pt, double tolerance, core::NodeId* out_node = nullptr) const;
-  HandleType hit_test_handles(core::Vec2d screen_pt, core::NodeId* out_node = nullptr) const;
   void update_smart_alignment_guides(core::NodeId dragged_node);
   void finalize_instantiation();
+  void apply_parametric_drag(core::Node& node, HandleType handle, core::Vec2d unrot_cursor, bool symmetric);
 
   core::GraphModel* graph_model_{nullptr};
   core::ISpatialIndex* spatial_index_{nullptr};
@@ -580,7 +598,8 @@ private:
     ResizingNode,
     RotatingNode,
     WiringConnector,
-    InstantiatingResize
+    InstantiatingResize,
+    DraggingParametricHandle
   };
 
   InteractionState interaction_state_{InteractionState::None};
@@ -626,6 +645,8 @@ private:
   int pending_polygon_sides_{6};
   std::vector<core::Vec2d> in_progress_polygon_points_;
   core::Vec2d polygon_cursor_world_{0.0, 0.0};
+  std::vector<core::Vec2d> parametric_initial_vertices_;
+  std::unordered_map<std::string, std::string> parametric_initial_props_;
 
   // Inline text editing
 #ifdef VECTOR_ENABLE_QT

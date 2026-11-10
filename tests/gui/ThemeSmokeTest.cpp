@@ -2973,6 +2973,136 @@ int main(int argc, char* argv[]) {
     std::cout << "[Test 38] Symbol Instantiation Anchor & Drag-to-Resize Control Point passed successfully!" << std::endl;
   }
 
+  // 39. Test Smart Parametric Shape Handles (Arrow Points & Attached Lines Modification)
+  {
+    std::cout << "===> Testing Smart Parametric Shape Handles (Arrow Points & Attached Lines)..." << std::endl;
+    vector::gui::MainWindow hwin;
+    hwin.resize(1024, 768);
+    auto* canvas = hwin.canvas();
+    assert(canvas != nullptr);
+    auto* graph = canvas->graph_model();
+    assert(graph != nullptr);
+    graph->clear();
+
+    // 1. Create Arrow Block shape
+    vector::core::Node arrow_node;
+    arrow_node.name = "Arrow Block";
+    arrow_node.shape = vector::core::ShapeType::CustomPolygon;
+    arrow_node.bounds = {100.0, 100.0, 200.0, 100.0};
+    arrow_node.polygon_vertices = {
+      {0.0, 0.2}, {0.6, 0.2}, {0.6, 0.0},
+      {1.0, 0.5}, {0.6, 1.0}, {0.6, 0.8}, {0.0, 0.8}
+    };
+    arrow_node.properties["parametric_type"] = "arrow";
+    const auto nid = graph->add_node(std::move(arrow_node));
+    assert(nid != vector::core::InvalidNodeId);
+
+    // 2. Select the arrow
+    canvas->select_node(nid, false);
+    assert(canvas->selected_nodes().size() == 1);
+
+    // 3. Verify parametric kind and handles
+    const auto* node = graph->find_node(nid);
+    assert(node != nullptr);
+    assert(vector::core::get_parametric_kind(*node) == vector::core::ParametricShapeKind::Arrow);
+    const auto handles = vector::core::get_parametric_handles(*node);
+    assert(handles.size() == 5);
+    assert(handles[0].normalized_pos.x == 0.6 && handles[0].normalized_pos.y == 0.2); // Top shoulder
+    assert(handles[1].normalized_pos.x == 0.6 && handles[1].normalized_pos.y == 0.8); // Bottom shoulder
+
+    // 4. Hit test top shoulder point handle
+    // World point of handle 0: (100 + 0.6 * 200, 100 + 0.2 * 100) = (220, 120)
+    const auto s_h0 = canvas->world_to_screen({220.0, 120.0});
+    vector::core::NodeId hit_node = vector::core::InvalidNodeId;
+    const auto ht0 = canvas->hit_test_handles(s_h0, &hit_node);
+    assert(ht0 == vector::renderer::HandleType::ParametricPoint0);
+    assert(hit_node == nid);
+    (void)ht0;
+
+    // 5. Hit test shoulder line (e.g. at world 220, 150)
+    const auto s_line_sh = canvas->world_to_screen({220.0, 150.0});
+    const auto ht_sh = canvas->hit_test_handles(s_line_sh, &hit_node);
+    assert(ht_sh == vector::renderer::HandleType::ParametricLineShoulder);
+    (void)ht_sh;
+
+    // 6. Hit test top shaft line (e.g. at world 160, 120)
+    const auto s_line_st = canvas->world_to_screen({160.0, 120.0});
+    const auto ht_st = canvas->hit_test_handles(s_line_st, &hit_node);
+    assert(ht_st == vector::renderer::HandleType::ParametricLineShaftTop);
+    (void)ht_st;
+
+    // 7. Test dragging top shoulder point horizontally (freeform by default)
+    // Click shoulder point
+    const QPointF q_h0(s_h0.x, s_h0.y);
+    QMouseEvent press_h0(QEvent::MouseButtonPress, q_h0, q_h0, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &press_h0);
+
+    // Drag to world (180, 130) -> sx becomes (180 - 100)/200 = 0.4, sy0 becomes (130 - 100)/100 = 0.3
+    const auto s_drag1 = canvas->world_to_screen({180.0, 130.0});
+    const QPointF q_drag1(s_drag1.x, s_drag1.y);
+    QMouseEvent move_h0(QEvent::MouseMove, q_drag1, q_drag1, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &move_h0);
+
+    // Verify all 4 shoulder vertices moved to 0.4, and top shaft moved to 0.3
+    const auto* mod_node1 = graph->find_node(nid);
+    assert(std::abs(mod_node1->polygon_vertices[1].x - 0.4) < 1e-3);
+    assert(std::abs(mod_node1->polygon_vertices[2].x - 0.4) < 1e-3);
+    assert(std::abs(mod_node1->polygon_vertices[4].x - 0.4) < 1e-3);
+    assert(std::abs(mod_node1->polygon_vertices[5].x - 0.4) < 1e-3);
+    assert(std::abs(mod_node1->polygon_vertices[0].y - 0.3) < 1e-3);
+    assert(std::abs(mod_node1->polygon_vertices[1].y - 0.3) < 1e-3);
+    // Freeform: bottom shaft remained at 0.8!
+    assert(std::abs(mod_node1->polygon_vertices[5].y - 0.8) < 1e-3);
+    assert(std::abs(mod_node1->polygon_vertices[6].y - 0.8) < 1e-3);
+    (void)mod_node1;
+
+    // Release mouse
+    QMouseEvent rel_h0(QEvent::MouseButtonRelease, q_drag1, q_drag1, Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &rel_h0);
+
+    // 8. Test Alt-drag for symmetric modification across centerline
+    // Click shoulder point again at new location (180, 130)
+    QMouseEvent press_h0_sym(QEvent::MouseButtonPress, q_drag1, q_drag1, Qt::LeftButton, Qt::LeftButton, Qt::AltModifier);
+    QApplication::sendEvent(canvas, &press_h0_sym);
+
+    // Drag with Alt down to Y = 135 (sy0 = 0.35)
+    const auto s_drag2 = canvas->world_to_screen({180.0, 135.0});
+    const QPointF q_drag2(s_drag2.x, s_drag2.y);
+    QMouseEvent move_h0_sym(QEvent::MouseMove, q_drag2, q_drag2, Qt::LeftButton, Qt::LeftButton, Qt::AltModifier);
+    QApplication::sendEvent(canvas, &move_h0_sym);
+
+    const auto* mod_node2 = graph->find_node(nid);
+    assert(std::abs(mod_node2->polygon_vertices[0].y - 0.35) < 1e-3);
+    assert(std::abs(mod_node2->polygon_vertices[1].y - 0.35) < 1e-3);
+    // Symmetrically mirrored across centerline: sy1 = 1.0 - 0.35 = 0.65!
+    assert(std::abs(mod_node2->polygon_vertices[5].y - 0.65) < 1e-3);
+    assert(std::abs(mod_node2->polygon_vertices[6].y - 0.65) < 1e-3);
+    (void)mod_node2;
+
+    QMouseEvent rel_h0_sym(QEvent::MouseButtonRelease, q_drag2, q_drag2, Qt::LeftButton, Qt::NoButton, Qt::AltModifier);
+    QApplication::sendEvent(canvas, &rel_h0_sym);
+
+    // 9. Test Undo and Redo of point modification
+    assert(canvas->command_history() != nullptr);
+    assert(canvas->command_history()->can_undo());
+    canvas->command_history()->undo();
+
+    const auto* undone_node = graph->find_node(nid);
+    assert(undone_node != nullptr);
+    assert(std::abs(undone_node->polygon_vertices[5].y - 0.8) < 1e-3);
+
+    canvas->command_history()->redo();
+    const auto* redone_node = graph->find_node(nid);
+    assert(redone_node != nullptr);
+    assert(std::abs(redone_node->polygon_vertices[5].y - 0.65) < 1e-3);
+    (void)undone_node; (void)redone_node;
+
+    // Render frame to ensure overlay with handles paints cleanly
+    canvas->render_frame_for_test();
+
+    std::cout << "[Test 39] Smart Parametric Shape Handles (Arrow Points & Attached Lines) passed successfully!" << std::endl;
+  }
+
   std::cout << "===> All Theme System, Snapping & Hierarchical Port Smoke Tests passed successfully!" << std::endl;
   return 0;
 }
