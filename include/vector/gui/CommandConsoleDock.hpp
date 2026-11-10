@@ -19,10 +19,12 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "vector/core/Geometry.hpp"
 #include "vector/core/GraphModel.hpp"
+#include "vector/core/ParametricShape.hpp"
 #include "vector/core/SymbolGenerator.hpp"
 #include "vector/renderer/CanvasWidget.hpp"
 
@@ -207,6 +209,12 @@ public:
     input_line_->selectAll();
   }
 
+  void execute_command(const QString& cmd) {
+    log_cmd(cmd);
+    command_history_.push_back(cmd);
+    process_single_command(cmd);
+  }
+
   void log_info(const QString& text) {
     history_view_->append(QString("<span style='color: #4ADE80;'>%1</span>").arg(text.toHtmlEscaped()));
     scroll_to_bottom();
@@ -237,6 +245,10 @@ private:
   void setup_autocomplete() {
     keywords_ = {
       "new",
+      "add",
+      "modify", "set", "prop", "property",
+      "point", "pt", "controlpoint",
+      "segmove", "segmentmove", "seg",
       "line", "l", "wire", "w",
       "rect", "rec", "rectangle", "box",
       "circle", "c", "ellipse",
@@ -420,6 +432,10 @@ private:
       history_view_->append("<b>textcolor</b> &lt;#hex|color&gt;  -  Set label text color on selection");
       history_view_->append("<b>style reset</b>  -  Reset selected nodes appearance to theme defaults");
       history_view_->append("<b>branchalign</b> &lt;on|off|toggle&gt;  -  Specify if lines on selected multipoint arrow are aligned");
+      history_view_->append("<b>add</b> &lt;rect|circle|poly|arrow|line|block|inport|outport|point&gt; [args...]  -  Create shape, net, or control point via code");
+      history_view_->append("<b>modify | set</b> [name] &lt;x|y|pos|w|h|size|rot|name|text|fill|stroke|textcolor&gt; &lt;val&gt;  -  Modify shape properties via code");
+      history_view_->append("<b>point | pt</b> &lt;list|add &lt;x,y&gt;|del &lt;index&gt;|set &lt;index&gt; &lt;x,y&gt;&gt;  -  Inspect or manipulate control points with code");
+      history_view_->append("<b>segmove</b> &lt;on|off|toggle&gt;  -  Enable/disable edge segment moving (disabled by default; hold Shift to drag segments)");
       history_view_->append("<b>clear | cls</b>  -  Clear console history");
       scroll_to_bottom();
       return;
@@ -434,6 +450,51 @@ private:
 
     if (!canvas_) {
       log_error("Canvas engine not connected.");
+      return;
+    }
+
+    // 0a. ADD (Code instantiation: add <rect|circle|poly|arrow|line|block|inport|outport|point>)
+    if (cmd == "add") {
+      if (tokens.size() >= 2) {
+        const QString sub = tokens[1].toLower();
+        if (sub == "point" || sub == "pt" || sub == "controlpoint") {
+          std::vector<QString> sub_tokens(tokens.begin() + 1, tokens.end());
+          process_point_command(sub_tokens);
+          return;
+        } else if (sub == "arrow" || sub == "chevron" || sub == "arrowblock") {
+          std::vector<QString> sub_tokens(tokens.begin() + 1, tokens.end());
+          process_arrow_command(sub_tokens);
+          return;
+        } else {
+          QString rest_cmd;
+          for (size_t i = 1; i < tokens.size(); ++i) {
+            if (i > 1) rest_cmd.append(" ");
+            rest_cmd.append(tokens[i]);
+          }
+          process_single_command(rest_cmd);
+          return;
+        }
+      } else {
+        log_error("Usage: add <rect|circle|poly|arrow|line|block|inport|outport|point> [args...]");
+        return;
+      }
+    }
+
+    // 0b. MODIFY / SET / PROP (Modify shape properties via code)
+    if (cmd == "modify" || cmd == "set" || cmd == "prop") {
+      process_modify_command(tokens);
+      return;
+    }
+
+    // 0c. POINT / PT / CONTROLPOINT (Inspect or manipulate control points via code)
+    if (cmd == "point" || cmd == "pt" || cmd == "controlpoint") {
+      process_point_command(tokens);
+      return;
+    }
+
+    // 0d. SEGMOVE / SEGMENTMOVE / SEG (Control edge segment moving behavior)
+    if (cmd == "segmove" || cmd == "segmentmove" || cmd == "seg") {
+      process_segmove_command(tokens);
       return;
     }
 
@@ -456,25 +517,9 @@ private:
       return;
     }
 
-    // ARROW (Auto-routing arrow with obstacle avoidance)
-    if (cmd == "arrow") {
-      if (tokens.size() >= 3) {
-        auto* gm = canvas_->graph_model();
-        if (gm) {
-          const auto* n1 = gm->find_node_by_name(tokens[1].toStdString());
-          const auto* n2 = gm->find_node_by_name(tokens[2].toStdString());
-          core::NodeId id1 = n1 ? n1->id : tokens[1].toULongLong();
-          core::NodeId id2 = n2 ? n2->id : tokens[2].toULongLong();
-          if (gm->find_node(id1) && gm->find_node(id2)) {
-            core::PortId p1 = (tokens.size() >= 4) ? tokens[3].toULongLong() : core::InvalidPortId;
-            core::PortId p2 = (tokens.size() >= 5) ? tokens[4].toULongLong() : core::InvalidPortId;
-            core::EdgeId eid = canvas_->auto_route_arrow(id1, p1, id2, p2);
-            log_info(QString("Created auto-routed arrow Net %1 from node %2 to %3").arg(eid).arg(id1).arg(id2));
-            return;
-          }
-        }
-      }
-      log_error("Usage: arrow <source_node> <target_node> [source_port] [target_port]");
+    // ARROW / CHEVRON / ARROWBLOCK (Arrow Shape Figure OR Auto-routed Arrow Net)
+    if (cmd == "arrow" || cmd == "chevron" || cmd == "arrowblock") {
+      process_arrow_command(tokens);
       return;
     }
 
@@ -1546,6 +1591,356 @@ private:
         cancel_command();
       }
     }
+  }
+
+  void process_arrow_command(const std::vector<QString>& tokens) {
+    if (!canvas_) {
+      log_error("Canvas engine not connected.");
+      return;
+    }
+    auto pt = (tokens.size() >= 2) ? parse_point(tokens[1]) : std::nullopt;
+    if (pt) {
+      double w = 130.0;
+      double h = 80.0;
+      std::string name;
+      if (tokens.size() >= 3) {
+        auto dims = parse_point(tokens[2]);
+        if (dims) {
+          w = std::abs(dims->x);
+          h = std::abs(dims->y);
+          if (tokens.size() >= 4) name = tokens[3].toStdString();
+        } else {
+          name = tokens[2].toStdString();
+        }
+      }
+      core::NodeId nid = canvas_->add_arrow_shape(*pt, w, h, name);
+      log_info(QString("Arrow Block '%1' (ID %2) created at (%3, %4) size %5x%6")
+          .arg(QString::fromStdString(name.empty() ? ("Arrow " + std::to_string(nid)) : name))
+          .arg(nid).arg(pt->x).arg(pt->y).arg(w).arg(h));
+      return;
+    }
+
+    if (tokens.size() >= 3) {
+      auto* gm = canvas_->graph_model();
+      if (gm) {
+        const auto* n1 = gm->find_node_by_name(tokens[1].toStdString());
+        const auto* n2 = gm->find_node_by_name(tokens[2].toStdString());
+        core::NodeId id1 = n1 ? n1->id : tokens[1].toULongLong();
+        core::NodeId id2 = n2 ? n2->id : tokens[2].toULongLong();
+        if (gm->find_node(id1) && gm->find_node(id2)) {
+          core::PortId p1 = (tokens.size() >= 4) ? tokens[3].toULongLong() : core::InvalidPortId;
+          core::PortId p2 = (tokens.size() >= 5) ? tokens[4].toULongLong() : core::InvalidPortId;
+          core::EdgeId eid = canvas_->auto_route_arrow(id1, p1, id2, p2);
+          log_info(QString("Created auto-routed arrow Net %1 from node %2 to %3").arg(eid).arg(id1).arg(id2));
+          return;
+        }
+      }
+    }
+    log_error("Usage: arrow <x,y> [w,h] [name] OR arrow <source_node> <target_node> [source_port] [target_port]");
+  }
+
+  void process_segmove_command(const std::vector<QString>& tokens) {
+    if (!canvas_) {
+      log_error("Canvas engine not connected.");
+      return;
+    }
+    if (tokens.size() >= 2) {
+      const QString sub = tokens[1].toLower();
+      if (sub == "on" || sub == "true" || sub == "1" || sub == "enable") {
+        canvas_->set_segment_moving_enabled(true);
+        log_info("Edge segment moving ENABLED (Segments can be dragged directly without holding Shift).");
+        return;
+      } else if (sub == "off" || sub == "false" || sub == "0" || sub == "disable") {
+        canvas_->set_segment_moving_enabled(false);
+        log_info("Edge segment moving DISABLED (default). Hold Shift to move edge segments on the fly, or Alt+S to toggle.");
+        return;
+      } else if (sub == "toggle" || sub == "t") {
+        const bool cur = canvas_->is_segment_moving_enabled();
+        canvas_->set_segment_moving_enabled(!cur);
+        log_info(QString("Edge segment moving %1 (Hold Shift to move when disabled).")
+            .arg(!cur ? "ENABLED" : "DISABLED"));
+        return;
+      }
+    }
+    const bool cur = canvas_->is_segment_moving_enabled();
+    log_info(QString("Edge segment moving is currently %1.\n"
+                     "When disabled (default), hold Shift to drag edge segments. Run 'segmove on' or press Alt+S to toggle.")
+        .arg(cur ? "ENABLED" : "DISABLED (Hold Shift to move)"));
+  }
+
+  void process_modify_command(const std::vector<QString>& tokens) {
+    if (!canvas_ || !canvas_->graph_model()) {
+      log_error("No canvas or graph model connected.");
+      return;
+    }
+    if (tokens.size() < 3) {
+      log_error("Usage: modify [shape_name] <property> <value>\n"
+                "Properties: x, y, pos (x,y), w/width, h/height, size (w,h), rot (deg), name, text, fill, stroke, strokewidth, textcolor, prop <key> <val>");
+      return;
+    }
+
+    QString target_str;
+    QString prop_str;
+    size_t val_start_idx = 2;
+
+    static const std::unordered_set<std::string> known_props = {
+      "x", "y", "pos", "position", "w", "width", "h", "height", "size",
+      "rot", "rotation", "angle", "name", "text", "label",
+      "fill", "fill_color", "stroke", "stroke_color", "strokewidth", "sw", "stroke_width",
+      "textcolor", "text_color", "fontcolor", "fontsize", "fontfamily", "prop", "property"
+    };
+
+    const std::string t1 = tokens[1].toLower().toStdString();
+    if (known_props.count(t1)) {
+      prop_str = tokens[1].toLower();
+      val_start_idx = 2;
+    } else {
+      target_str = tokens[1];
+      if (tokens.size() < 4) {
+        log_error("Usage: modify " + target_str + " <property> <value>");
+        return;
+      }
+      prop_str = tokens[2].toLower();
+      val_start_idx = 3;
+    }
+
+    auto* gm = canvas_->graph_model();
+    std::vector<core::NodeId> target_ids;
+    if (!target_str.isEmpty()) {
+      if (const auto* n = gm->find_node_by_name(target_str.toStdString())) {
+        target_ids.push_back(n->id);
+      } else {
+        bool ok = false;
+        core::NodeId nid = target_str.toULongLong(&ok);
+        if (ok && gm->find_node(nid)) {
+          target_ids.push_back(nid);
+        } else {
+          log_error("Could not find shape named or with ID: " + target_str);
+          return;
+        }
+      }
+    } else {
+      target_ids = canvas_->selected_nodes();
+      if (target_ids.empty()) {
+        log_error("No shape selected. Select a shape or specify its name: modify <shape_name> <prop> <val>");
+        return;
+      }
+    }
+
+    QString val_str;
+    for (size_t i = val_start_idx; i < tokens.size(); ++i) {
+      if (i > val_start_idx) val_str.append(" ");
+      val_str.append(tokens[i]);
+    }
+
+    for (core::NodeId nid : target_ids) {
+      auto* node = gm->find_node(nid);
+      if (!node) continue;
+
+      if (prop_str == "x") {
+        bool ok = false;
+        double v = val_str.toDouble(&ok);
+        if (ok) node->bounds.x = v;
+      } else if (prop_str == "y") {
+        bool ok = false;
+        double v = val_str.toDouble(&ok);
+        if (ok) node->bounds.y = v;
+      } else if (prop_str == "pos" || prop_str == "position") {
+        auto pt = parse_point(val_str);
+        if (pt) {
+          node->bounds.x = pt->x;
+          node->bounds.y = pt->y;
+        } else {
+          log_error("Invalid position format. Use x,y (e.g. 150,200)");
+          return;
+        }
+      } else if (prop_str == "w" || prop_str == "width") {
+        bool ok = false;
+        double v = val_str.toDouble(&ok);
+        if (ok && v > 0.0) node->bounds.width = v;
+      } else if (prop_str == "h" || prop_str == "height") {
+        bool ok = false;
+        double v = val_str.toDouble(&ok);
+        if (ok && v > 0.0) node->bounds.height = v;
+      } else if (prop_str == "size") {
+        auto pt = parse_point(val_str);
+        if (pt && pt->x > 0.0 && pt->y > 0.0) {
+          node->bounds.width = pt->x;
+          node->bounds.height = pt->y;
+        } else {
+          log_error("Invalid size format. Use w,h (e.g. 200,120)");
+          return;
+        }
+      } else if (prop_str == "rot" || prop_str == "rotation" || prop_str == "angle") {
+        bool ok = false;
+        double deg = val_str.toDouble(&ok);
+        if (ok) {
+          while (deg < 0.0) deg += 360.0;
+          while (deg >= 360.0) deg -= 360.0;
+          node->rotation_deg = deg;
+        }
+      } else if (prop_str == "name") {
+        node->name = val_str.toStdString();
+      } else if (prop_str == "text" || prop_str == "label") {
+        node->properties["text"] = val_str.toStdString();
+        node->name = val_str.toStdString();
+      } else if (prop_str == "fill" || prop_str == "fill_color") {
+        node->properties["fill_color"] = val_str.toStdString();
+      } else if (prop_str == "stroke" || prop_str == "stroke_color") {
+        node->properties["stroke_color"] = val_str.toStdString();
+      } else if (prop_str == "strokewidth" || prop_str == "sw" || prop_str == "stroke_width") {
+        node->properties["stroke_width"] = val_str.toStdString();
+      } else if (prop_str == "textcolor" || prop_str == "text_color" || prop_str == "fontcolor") {
+        node->properties["text_color"] = val_str.toStdString();
+      } else if (prop_str == "fontsize") {
+        node->properties["font_size"] = val_str.toStdString();
+      } else if (prop_str == "fontfamily") {
+        node->properties["font_family"] = val_str.toStdString();
+      } else if (prop_str == "prop" || prop_str == "property") {
+        if (val_start_idx + 1 < tokens.size()) {
+          const std::string key = tokens[val_start_idx].toStdString();
+          const std::string val = tokens[val_start_idx + 1].toStdString();
+          node->properties[key] = val;
+        }
+      } else {
+        log_error("Unknown property '" + prop_str + "'.");
+        return;
+      }
+
+      log_info(QString("Shape '%1' (ID %2): set %3 = %4")
+          .arg(QString::fromStdString(node->name))
+          .arg(nid)
+          .arg(prop_str)
+          .arg(val_str));
+    }
+
+    canvas_->refresh_spatial_index();
+    canvas_->update();
+    emit canvas_->diagram_modified();
+  }
+
+  void process_point_command(const std::vector<QString>& tokens) {
+    if (!canvas_ || !canvas_->graph_model()) {
+      log_error("No canvas or graph model connected.");
+      return;
+    }
+    const auto& sel = canvas_->selected_nodes();
+    if (sel.empty()) {
+      log_error("No shape selected. Select a shape first to view or modify its control points.");
+      return;
+    }
+
+    core::NodeId nid = sel.front();
+    auto* node = canvas_->graph_model()->find_node(nid);
+    if (!node) {
+      log_error("Selected shape node not found.");
+      return;
+    }
+
+    if (tokens.size() <= 1 || tokens[1].toLower() == "list") {
+      core::ensure_shape_polygon_vertices(*node);
+      history_view_->append(QString("<span style='color: #38BDF8;'><b>Control Points for '%1' (%2 points):</b></span>")
+          .arg(QString::fromStdString(node->name)).arg(node->polygon_vertices.size()));
+      const auto handles = core::get_parametric_handles(*node);
+      for (size_t i = 0; i < node->polygon_vertices.size(); ++i) {
+        const auto& pv = node->polygon_vertices[i];
+        const double wx = node->bounds.x + pv.x * node->bounds.width;
+        const double wy = node->bounds.y + pv.y * node->bounds.height;
+        QString desc;
+        for (const auto& h : handles) {
+          if (h.id == static_cast<int>(i)) {
+            desc = QString::fromStdString(" (" + h.description + ")");
+            break;
+          }
+        }
+        history_view_->append(QString("  <b>[%1]</b> norm: (%2, %3)  world: (%4, %5)%6")
+            .arg(i)
+            .arg(pv.x, 0, 'f', 3)
+            .arg(pv.y, 0, 'f', 3)
+            .arg(wx, 0, 'f', 1)
+            .arg(wy, 0, 'f', 1)
+            .arg(desc));
+      }
+      scroll_to_bottom();
+      return;
+    }
+
+    const QString sub = tokens[1].toLower();
+    if (sub == "add" || sub == "insert") {
+      if (tokens.size() < 3) {
+        log_error("Usage: point add <x,y>");
+        return;
+      }
+      auto pt = parse_point(tokens[2]);
+      if (!pt) {
+        log_error("Invalid point coordinate format: " + tokens[2] + ". Use x,y (e.g. 150,200).");
+        return;
+      }
+      core::Vec2d world_pos = *pt;
+      if (pt->x >= 0.0 && pt->x <= 1.0 && pt->y >= 0.0 && pt->y <= 1.0 &&
+          node->bounds.width > 2.0 && node->bounds.height > 2.0) {
+        world_pos = {node->bounds.x + pt->x * node->bounds.width, node->bounds.y + pt->y * node->bounds.height};
+      }
+      if (canvas_->insert_control_point_at_world(nid, world_pos)) {
+        log_info(QString("Added control point at world (%1, %2) to shape '%3'")
+            .arg(world_pos.x).arg(world_pos.y).arg(QString::fromStdString(node->name)));
+      } else {
+        log_error("Failed to add control point.");
+      }
+      return;
+    }
+
+    if (sub == "del" || sub == "delete" || sub == "remove" || sub == "rm") {
+      if (tokens.size() < 3) {
+        log_error("Usage: point del <index>");
+        return;
+      }
+      bool ok = false;
+      int idx = tokens[2].toInt(&ok);
+      if (!ok || idx < 0 || idx >= static_cast<int>(node->polygon_vertices.size())) {
+        log_error(QString("Invalid point index %1 (valid: 0 to %2)").arg(tokens[2]).arg(static_cast<int>(node->polygon_vertices.size()) - 1));
+        return;
+      }
+      if (canvas_->remove_control_point(nid, idx)) {
+        log_info(QString("Removed control point [%1] from shape '%2'").arg(idx).arg(QString::fromStdString(node->name)));
+      } else {
+        log_error("Cannot remove control point (minimum 3 vertices required).");
+      }
+      return;
+    }
+
+    if (sub == "set" || sub == "move") {
+      if (tokens.size() < 4) {
+        log_error("Usage: point set <index> <x,y>");
+        return;
+      }
+      bool ok = false;
+      int idx = tokens[2].toInt(&ok);
+      core::ensure_shape_polygon_vertices(*node);
+      if (!ok || idx < 0 || idx >= static_cast<int>(node->polygon_vertices.size())) {
+        log_error(QString("Invalid point index %1 (valid: 0 to %2)").arg(tokens[2]).arg(static_cast<int>(node->polygon_vertices.size()) - 1));
+        return;
+      }
+      auto pt = parse_point(tokens[3]);
+      if (!pt) {
+        log_error("Invalid point coordinate format: " + tokens[3] + ". Use x,y (e.g. 0.5,0.2 or world 200,150).");
+        return;
+      }
+      core::Vec2d norm_pt = *pt;
+      if (norm_pt.x < 0.0 || norm_pt.x > 1.0 || norm_pt.y < 0.0 || norm_pt.y > 1.0) {
+        norm_pt.x = std::clamp((pt->x - node->bounds.x) / std::max(1.0, node->bounds.width), 0.0, 1.0);
+        norm_pt.y = std::clamp((pt->y - node->bounds.y) / std::max(1.0, node->bounds.height), 0.0, 1.0);
+      }
+      node->polygon_vertices[idx] = norm_pt;
+      canvas_->refresh_spatial_index();
+      canvas_->update();
+      emit canvas_->diagram_modified();
+      log_info(QString("Moved control point [%1] of shape '%2' to norm (%3, %4)")
+          .arg(idx).arg(QString::fromStdString(node->name)).arg(norm_pt.x, 0, 'f', 3).arg(norm_pt.y, 0, 'f', 3));
+      return;
+    }
+
+    log_error("Usage: point <list | add <x,y> | del <index> | set <index> <x,y>>");
   }
 
   QTextEdit* history_view_{nullptr};

@@ -5,6 +5,7 @@
 #include "vector/renderer/CanvasWidget.hpp"
 
 #ifdef VECTOR_ENABLE_QT
+#include <QApplication>
 #include <QContextMenuEvent>
 #include <QFileInfo>
 #include <QMenu>
@@ -485,6 +486,26 @@ core::NodeId CanvasWidget::add_custom_polygon_shape(
   return nid;
 }
 
+core::NodeId CanvasWidget::add_arrow_shape(
+    core::Vec2d world_pos,
+    double width,
+    double height,
+    const std::string& name,
+    bool snap_pos) {
+  const std::vector<core::Vec2d> arrow_verts = {
+    {0.0, 0.2}, {0.6, 0.2}, {0.6, 0.0},
+    {1.0, 0.5}, {0.6, 1.0}, {0.6, 0.8}, {0.0, 0.8}
+  };
+  const std::string n = name.empty() ? ("Arrow " + std::to_string(graph_model_ ? (graph_model_->node_count() + 1) : 1)) : name;
+  const core::NodeId nid = add_custom_polygon_shape(world_pos, arrow_verts, n, width > 0.0 ? width : 130.0, height > 0.0 ? height : 80.0, snap_pos);
+  if (graph_model_) {
+    if (auto* node = graph_model_->find_node(nid)) {
+      node->properties["parametric_type"] = "arrow";
+    }
+  }
+  return nid;
+}
+
 bool CanvasWidget::insert_control_point_at_world(core::NodeId node_id, core::Vec2d world_pt) {
   if (!graph_model_) return false;
   auto* node = graph_model_->find_node(node_id);
@@ -550,6 +571,24 @@ bool CanvasWidget::remove_control_point(core::NodeId node_id, int point_index) {
       .arg(QString::fromStdString(node->name)));
   update();
   return true;
+}
+
+void CanvasWidget::set_segment_moving_enabled(bool enabled) {
+  if (segment_moving_enabled_ == enabled) return;
+  segment_moving_enabled_ = enabled;
+#ifdef VECTOR_ENABLE_QT
+  emit segment_moving_toggled(enabled);
+#endif
+  update();
+}
+
+bool CanvasWidget::is_segment_moving_active() const noexcept {
+  if (segment_moving_enabled_) return true;
+#ifdef VECTOR_ENABLE_QT
+  return (QApplication::keyboardModifiers() & Qt::ShiftModifier) != 0;
+#else
+  return false;
+#endif
 }
 
 void CanvasWidget::delete_selected() {
@@ -3658,6 +3697,20 @@ void CanvasWidget::keyPressEvent(QKeyEvent* event) {
     }
   }
 
+  if (event->key() == Qt::Key_Shift && !event->isAutoRepeat()) {
+    core::NodeId h_node = core::InvalidNodeId;
+    hovered_handle_ = hit_test_handles(last_mouse_screen_, &h_node);
+    update();
+  }
+  if ((event->modifiers() & Qt::AltModifier) && event->key() == Qt::Key_S) {
+    set_segment_moving_enabled(!is_segment_moving_enabled());
+    emit status_message_requested(is_segment_moving_enabled()
+        ? "Edge segment moving enabled (Alt+S)"
+        : "Edge segment moving disabled (Hold Shift to move)");
+    event->accept();
+    return;
+  }
+
   if (event->key() == Qt::Key_Colon || event->key() == Qt::Key_Slash || event->key() == Qt::Key_F2) {
     emit focus_console_requested();
     event->accept();
@@ -3814,6 +3867,11 @@ void CanvasWidget::keyPressEvent(QKeyEvent* event) {
 }
 
 void CanvasWidget::keyReleaseEvent(QKeyEvent* event) {
+  if (event->key() == Qt::Key_Shift && !event->isAutoRepeat()) {
+    core::NodeId h_node = core::InvalidNodeId;
+    hovered_handle_ = hit_test_handles(last_mouse_screen_, &h_node);
+    update();
+  }
   if (event->key() == Qt::Key_Space && !event->isAutoRepeat()) {
     is_space_panning_ = false;
     if (interaction_state_ == InteractionState::Panning) {
@@ -4239,6 +4297,7 @@ core::NodeId CanvasWidget::instantiate_template_at(const ShapePlacementTemplate&
 core::NodeId CanvasWidget::add_shape(core::ShapeType, core::Vec2d, const std::string&, bool) { return 0; }
 core::NodeId CanvasWidget::add_polygon(core::Vec2d, int, const std::string&, bool) { return 0; }
 core::NodeId CanvasWidget::add_custom_polygon_shape(core::Vec2d, const std::vector<core::Vec2d>&, const std::string&, double, double, bool) { return 0; }
+core::NodeId CanvasWidget::add_arrow_shape(core::Vec2d, double, double, const std::string&, bool) { return 0; }
 bool CanvasWidget::insert_control_point_at_world(core::NodeId, core::Vec2d) { return false; }
 bool CanvasWidget::remove_control_point(core::NodeId, int) { return false; }
 core::NodeId CanvasWidget::add_hierarchical_port(core::Vec2d, bool, const std::string&, bool) { return 0; }
@@ -4586,50 +4645,52 @@ HandleType CanvasWidget::hit_test_handles(core::Vec2d screen_pt, core::NodeId* o
       }
     }
 
-    if (p_kind == core::ParametricShapeKind::Arrow && node->polygon_vertices.size() == 7) {
-      auto dist_to_seg = [](core::Vec2d p, core::Vec2d a, core::Vec2d b) {
-        const double l2 = a.distance_sq_to(b);
-        if (l2 < 1e-6) return p.distance_to(a);
-        const double t = std::clamp(((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2, 0.0, 1.0);
-        const core::Vec2d proj = {a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)};
-        return p.distance_to(proj);
-      };
+    if (is_segment_moving_active()) {
+      if (p_kind == core::ParametricShapeKind::Arrow && node->polygon_vertices.size() == 7) {
+        auto dist_to_seg = [](core::Vec2d p, core::Vec2d a, core::Vec2d b) {
+          const double l2 = a.distance_sq_to(b);
+          if (l2 < 1e-6) return p.distance_to(a);
+          const double t = std::clamp(((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2, 0.0, 1.0);
+          const core::Vec2d proj = {a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)};
+          return p.distance_to(proj);
+        };
 
-      const auto& pv = node->polygon_vertices;
-      const core::Vec2d p0_s = {x0 + pv[0].x * sw, y0 + pv[0].y * sh};
-      const core::Vec2d p1_s = {x0 + pv[1].x * sw, y0 + pv[1].y * sh};
-      const core::Vec2d p2_s = {x0 + pv[2].x * sw, y0 + pv[2].y * sh};
-      const core::Vec2d p4_s = {x0 + pv[4].x * sw, y0 + pv[4].y * sh};
-      const core::Vec2d p5_s = {x0 + pv[5].x * sw, y0 + pv[5].y * sh};
-      const core::Vec2d p6_s = {x0 + pv[6].x * sw, y0 + pv[6].y * sh};
+        const auto& pv = node->polygon_vertices;
+        const core::Vec2d p0_s = {x0 + pv[0].x * sw, y0 + pv[0].y * sh};
+        const core::Vec2d p1_s = {x0 + pv[1].x * sw, y0 + pv[1].y * sh};
+        const core::Vec2d p2_s = {x0 + pv[2].x * sw, y0 + pv[2].y * sh};
+        const core::Vec2d p4_s = {x0 + pv[4].x * sw, y0 + pv[4].y * sh};
+        const core::Vec2d p5_s = {x0 + pv[5].x * sw, y0 + pv[5].y * sh};
+        const core::Vec2d p6_s = {x0 + pv[6].x * sw, y0 + pv[6].y * sh};
 
-      if (dist_to_seg(test_pt, p2_s, p4_s) <= 5.5) {
-        return HandleType::ParametricLineShoulder;
+        if (dist_to_seg(test_pt, p2_s, p4_s) <= 5.5) {
+          return HandleType::ParametricLineShoulder;
+        }
+        if (dist_to_seg(test_pt, p0_s, p1_s) <= 5.5) {
+          return HandleType::ParametricLineShaftTop;
+        }
+        if (dist_to_seg(test_pt, p5_s, p6_s) <= 5.5) {
+          return HandleType::ParametricLineShaftBottom;
+        }
       }
-      if (dist_to_seg(test_pt, p0_s, p1_s) <= 5.5) {
-        return HandleType::ParametricLineShaftTop;
-      }
-      if (dist_to_seg(test_pt, p5_s, p6_s) <= 5.5) {
-        return HandleType::ParametricLineShaftBottom;
-      }
-    }
 
-    // Generic polygon edge line handles
-    if (!node->polygon_vertices.empty()) {
-      auto dist_to_seg = [](core::Vec2d p, core::Vec2d a, core::Vec2d b) {
-        const double l2 = a.distance_sq_to(b);
-        if (l2 < 1e-6) return p.distance_to(a);
-        const double t = std::clamp(((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2, 0.0, 1.0);
-        const core::Vec2d proj = {a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)};
-        return p.distance_to(proj);
-      };
+      // Generic polygon edge line handles
+      if (!node->polygon_vertices.empty()) {
+        auto dist_to_seg = [](core::Vec2d p, core::Vec2d a, core::Vec2d b) {
+          const double l2 = a.distance_sq_to(b);
+          if (l2 < 1e-6) return p.distance_to(a);
+          const double t = std::clamp(((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2, 0.0, 1.0);
+          const core::Vec2d proj = {a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)};
+          return p.distance_to(proj);
+        };
 
-      for (size_t i = 0; i < node->polygon_vertices.size(); ++i) {
-        size_t next_i = (i + 1) % node->polygon_vertices.size();
-        const core::Vec2d pA_s = {x0 + node->polygon_vertices[i].x * sw, y0 + node->polygon_vertices[i].y * sh};
-        const core::Vec2d pB_s = {x0 + node->polygon_vertices[next_i].x * sw, y0 + node->polygon_vertices[next_i].y * sh};
-        if (dist_to_seg(test_pt, pA_s, pB_s) <= 5.5) {
-          return make_parametric_line_handle(static_cast<int>(i));
+        for (size_t i = 0; i < node->polygon_vertices.size(); ++i) {
+          size_t next_i = (i + 1) % node->polygon_vertices.size();
+          const core::Vec2d pA_s = {x0 + node->polygon_vertices[i].x * sw, y0 + node->polygon_vertices[i].y * sh};
+          const core::Vec2d pB_s = {x0 + node->polygon_vertices[next_i].x * sw, y0 + node->polygon_vertices[next_i].y * sh};
+          if (dist_to_seg(test_pt, pA_s, pB_s) <= 5.5) {
+            return make_parametric_line_handle(static_cast<int>(i));
+          }
         }
       }
     }

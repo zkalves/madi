@@ -361,9 +361,13 @@ public:
       double width = 120.0,
       double height = 100.0,
       bool snap_pos = true);
+  core::NodeId add_arrow_shape(core::Vec2d world_pos, double width = 130.0, double height = 80.0, const std::string& name = {}, bool snap_pos = true);
   bool insert_control_point_at_world(core::NodeId node_id, core::Vec2d world_pt);
   bool remove_control_point(core::NodeId node_id, int point_index);
   void apply_parametric_drag(core::Node& node, HandleType handle, core::Vec2d unrot_cursor, bool symmetric);
+  [[nodiscard]] bool is_segment_moving_enabled() const noexcept { return segment_moving_enabled_; }
+  void set_segment_moving_enabled(bool enabled);
+  [[nodiscard]] bool is_segment_moving_active() const noexcept;
   void delete_selected();
   void select_all();
   void clear_selection();
@@ -572,6 +576,7 @@ signals:
   void node_rotation_changed(core::NodeId id, double deg);
   void angle_snap_toggled(bool enabled);
   void angle_snap_step_changed(double step_deg);
+  void segment_moving_toggled(bool enabled);
 
 protected:
   void initializeGL() override;
@@ -665,6 +670,7 @@ private:
   core::NodeId hovered_node_{core::InvalidNodeId};
   int selected_control_point_index_{-1};
   core::NodeId selected_control_point_node_{core::InvalidNodeId};
+  bool segment_moving_enabled_{false}; // Disabled by default, enabled via keystroke (Shift) or toggle
   core::Rect2d resize_initial_bounds_;
   core::Vec2d resize_start_world_{0.0, 0.0};
   std::vector<grid::SnapGuideLine> active_smart_guides_;

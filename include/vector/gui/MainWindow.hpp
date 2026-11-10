@@ -243,8 +243,12 @@ public:
     connect(canvas_, &vector::renderer::CanvasWidget::status_message_requested,
             this, [this](const QString& msg) {
       statusBar()->showMessage(msg);
-      if (console_dock_) {
-        console_dock_->log_info(msg);
+    });
+
+    connect(canvas_, &vector::renderer::CanvasWidget::segment_moving_toggled,
+            this, [this](bool enabled) {
+      if (action_toggle_segment_moving_ && action_toggle_segment_moving_->isChecked() != enabled) {
+        action_toggle_segment_moving_->setChecked(enabled);
       }
     });
 
@@ -403,6 +407,8 @@ public:
   [[nodiscard]] QToolButton* btn_insp_rot_ccw() const noexcept { return btn_insp_rot_ccw_; }
   [[nodiscard]] QToolButton* btn_insp_angle_snap() const noexcept { return btn_insp_angle_snap_; }
   [[nodiscard]] QAction* action_keyboard_shortcuts() const noexcept { return action_keyboard_shortcuts_; }
+  [[nodiscard]] CommandConsoleDock* console_dock() const noexcept { return console_dock_; }
+  [[nodiscard]] QAction* action_toggle_segment_moving() const noexcept { return action_toggle_segment_moving_; }
 
   [[nodiscard]] static QString format_status_hierarchy_path(const QString& raw_path, int max_chars = 38, int max_elements = 3) {
     if (raw_path.isEmpty()) {
@@ -1150,6 +1156,19 @@ private:
     action_toggle_line_jumps_->setChecked(true);
     connect(action_toggle_line_jumps_, &QAction::toggled, canvas_, &vector::renderer::CanvasWidget::set_show_line_jumps);
 
+    action_toggle_segment_moving_ = new QAction("Enable &Edge Segment Moving", this);
+    action_toggle_segment_moving_->setCheckable(true);
+    action_toggle_segment_moving_->setChecked(false);
+    action_toggle_segment_moving_->setShortcut(QKeySequence(Qt::ALT | Qt::Key_S));
+    action_toggle_segment_moving_->setToolTip("Enable Edge Segment Moving (Alt+S). When disabled, hold Shift to drag edge segments.");
+    action_toggle_segment_moving_->setStatusTip("Toggle edge segment moving on shapes and arrows (Alt+S). Hold Shift to move segments temporarily.");
+    connect(action_toggle_segment_moving_, &QAction::toggled, this, [this](bool checked) {
+      if (canvas_) {
+        canvas_->set_segment_moving_enabled(checked);
+        statusBar()->showMessage(checked ? "Edge segment moving enabled" : "Edge segment moving disabled (Hold Shift to move)", 3000);
+      }
+    });
+
     action_toggle_smart_guides_ = new QAction("Show &Smart Alignment Guides", this);
     action_toggle_smart_guides_->setCheckable(true);
     action_toggle_smart_guides_->setChecked(true);
@@ -1331,6 +1350,7 @@ private:
     menu_visual_aids->addAction(action_toggle_smart_guides_);
     menu_visual_aids->addAction(action_toggle_rulers_);
     menu_visual_aids->addAction(action_toggle_line_jumps_);
+    menu_visual_aids->addAction(action_toggle_segment_moving_);
     menu_visual_aids->addSeparator();
 
     auto* menu_wire_style = menu_visual_aids->addMenu("&Wire Crossing Style");
@@ -4223,6 +4243,7 @@ public:
   QAction* action_toggle_grid_{nullptr};
   QAction* action_toggle_snap_{nullptr};
   QAction* action_toggle_angle_snap_{nullptr};
+  QAction* action_toggle_segment_moving_{nullptr};
   QAction* action_snap_settings_{nullptr};
 
   QAction* action_drill_down_{nullptr};

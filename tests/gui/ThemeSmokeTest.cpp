@@ -3020,7 +3020,17 @@ int main(int argc, char* argv[]) {
     (void)ht0;
 
     // 5. Hit test shoulder line (e.g. at world 220, 150)
+    // Edge segment moving is disabled by default to prevent accidental segment dragging
+    assert(!canvas->is_segment_moving_enabled());
     const auto s_line_sh = canvas->world_to_screen({220.0, 150.0});
+    const auto ht_sh_disabled = canvas->hit_test_handles(s_line_sh, &hit_node);
+    assert(ht_sh_disabled == vector::renderer::HandleType::None);
+    (void)ht_sh_disabled;
+
+    // Enable segment moving: line handles become interactive
+    canvas->set_segment_moving_enabled(true);
+    assert(canvas->is_segment_moving_enabled());
+    assert(canvas->is_segment_moving_active());
     const auto ht_sh = canvas->hit_test_handles(s_line_sh, &hit_node);
     assert(ht_sh == vector::renderer::HandleType::ParametricLineShoulder);
     (void)ht_sh;
@@ -3232,6 +3242,113 @@ int main(int argc, char* argv[]) {
     canvas->render_frame_for_test();
 
     std::cout << "[Test 40] Shape Control Points & Vertex Editing in Symbol Editor & Drawing Area passed successfully!" << std::endl;
+  }
+
+  // 41. Test Command Console Shape & Control Point Scripting with Code
+  {
+    std::cout << "===> Testing Command Console Shape & Control Point Scripting with Code..." << std::endl;
+    vector::gui::MainWindow hwin;
+    hwin.resize(1024, 768);
+    auto* canvas = hwin.canvas();
+    assert(canvas != nullptr);
+    auto* graph = canvas->graph_model();
+    assert(graph != nullptr);
+    graph->clear();
+
+    auto* console = hwin.console_dock();
+    assert(console != nullptr);
+
+    // 1. Test segmove command
+    assert(!canvas->is_segment_moving_enabled());
+    console->execute_command("segmove on");
+    assert(canvas->is_segment_moving_enabled());
+    console->execute_command("segmove off");
+    assert(!canvas->is_segment_moving_enabled());
+    console->execute_command("segmove toggle");
+    assert(canvas->is_segment_moving_enabled());
+    console->execute_command("segmove off");
+    assert(!canvas->is_segment_moving_enabled());
+
+    // 2. Add rectangle via code command: add rect <x,y> <w,h> [name]
+    console->execute_command("add rect 100,150 180,90 CodeBox");
+    assert(graph->node_count() == 1);
+    auto* n1 = graph->find_node_by_name("CodeBox");
+    assert(n1 != nullptr);
+    assert(n1->bounds.x == 100.0 && n1->bounds.y == 150.0);
+    assert(n1->bounds.width == 180.0 && n1->bounds.height == 90.0);
+
+    // 3. Add circle via code: add circle <x,y> <r> [name]
+    console->execute_command("add circle 400,200 45 CodeCircle");
+    assert(graph->node_count() == 2);
+    auto* n2 = graph->find_node_by_name("CodeCircle");
+    assert(n2 != nullptr);
+    assert(n2->bounds.width == 90.0 && n2->bounds.height == 90.0);
+
+    // 4. Add arrow shape via code: add arrow <x,y> <w,h> [name]
+    console->execute_command("add arrow 600,200 140,80 CodeArrow");
+    assert(graph->node_count() == 3);
+    auto* n3 = graph->find_node_by_name("CodeArrow");
+    assert(n3 != nullptr);
+    assert(n3->polygon_vertices.size() == 7);
+    assert(vector::core::get_parametric_kind(*n3) == vector::core::ParametricShapeKind::Arrow);
+
+    // 5. Modify shape with code on selected node
+    canvas->select_node(n1->id, false);
+    assert(canvas->selected_nodes().size() == 1);
+
+    // Modify width
+    console->execute_command("modify w 240");
+    assert(n1->bounds.width == 240.0);
+
+    // Modify height
+    console->execute_command("modify h 120");
+    assert(n1->bounds.height == 120.0);
+
+    // Modify position
+    console->execute_command("modify pos 120,160");
+    assert(n1->bounds.x == 120.0 && n1->bounds.y == 160.0);
+
+    // Modify rotation
+    console->execute_command("modify rot 30");
+    assert(std::abs(n1->rotation_deg - 30.0) < 1e-4);
+
+    // Modify appearance
+    console->execute_command("modify fill #2563EB");
+    assert(n1->properties["fill_color"] == "#2563EB");
+
+    // 6. Modify shape by target name
+    console->execute_command("modify CodeCircle w 110");
+    assert(n2->bounds.width == 110.0);
+    (void)n2;
+
+    // 7. Manipulate control points with code: point add, point list, point set, point del
+    canvas->select_node(n3->id, false);
+    assert(canvas->selected_nodes().size() == 1);
+
+    // List points
+    console->execute_command("point list");
+
+    // Add control point
+    const size_t arrow_pt_count = n3->polygon_vertices.size();
+    console->execute_command("point add 620,200");
+    assert(n3->polygon_vertices.size() == arrow_pt_count + 1);
+
+    // Set control point
+    console->execute_command("point set 0 0.05,0.25");
+    assert(std::abs(n3->polygon_vertices[0].x - 0.05) < 1e-3);
+    assert(std::abs(n3->polygon_vertices[0].y - 0.25) < 1e-3);
+
+    // Del control point
+    console->execute_command("point del 0");
+    assert(n3->polygon_vertices.size() == arrow_pt_count);
+    (void)arrow_pt_count;
+
+    // 8. Rename shape with code
+    console->execute_command("modify CodeBox name RenamedBox");
+    assert(graph->find_node_by_name("RenamedBox") != nullptr);
+
+    canvas->render_frame_for_test();
+    std::cout << "[Test 41] Command Console Shape & Control Point Scripting with Code passed successfully!" << std::endl;
   }
 
   std::cout << "===> All Theme System, Snapping & Hierarchical Port Smoke Tests passed successfully!" << std::endl;
