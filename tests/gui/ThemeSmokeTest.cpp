@@ -3351,6 +3351,145 @@ int main(int argc, char* argv[]) {
     std::cout << "[Test 41] Command Console Shape & Control Point Scripting with Code passed successfully!" << std::endl;
   }
 
+  // 42. Test Bidirectional Port Visual Differentiation, Stencil Custom Sections, Built-in Protection & Canvas Drag-to-Shapes
+  {
+    std::cout << "\n[Test 42] Testing Bidirectional Port Differentiation & Shapes Custom Sections..." << std::endl;
+    vector::gui::MainWindow win;
+    win.show();
+
+    auto* canvas = win.canvas();
+    auto* graph = win.graph_model();
+    auto* stencil_dock = win.findChild<vector::gui::StencilLibraryDock*>("ShapesDock");
+    assert(canvas != nullptr && graph != nullptr && stencil_dock != nullptr);
+
+    // 1. Port Visual Differentiation (InputPort vs OutputPort vs BidirectionalPort)
+    const auto in_id = canvas->add_hierarchical_port({100.0, 100.0}, "in", "data_in", false);
+    const auto out_id = canvas->add_hierarchical_port({300.0, 100.0}, "out", "data_out", false);
+    const auto bi_id = canvas->add_hierarchical_port({200.0, 100.0}, "inout", "bus_io", false);
+
+    const auto* in_node = graph->find_node(in_id);
+    const auto* out_node = graph->find_node(out_id);
+    const auto* bi_node = graph->find_node(bi_id);
+    assert(in_node != nullptr && out_node != nullptr && bi_node != nullptr);
+
+    // Check ShapeType
+    assert(in_node->shape == vector::core::ShapeType::InputPort);
+    assert(out_node->shape == vector::core::ShapeType::OutputPort);
+    assert(bi_node->shape == vector::core::ShapeType::BidirectionalPort);
+
+    // Check helper predicates
+    assert(in_node->is_input_port() && !in_node->is_output_port() && !in_node->is_bidirectional_port());
+    assert(!out_node->is_input_port() && out_node->is_output_port() && !out_node->is_bidirectional_port());
+    assert(!bi_node->is_input_port() && !bi_node->is_output_port() && bi_node->is_bidirectional_port());
+    assert(in_node->is_interface_port() && out_node->is_interface_port() && bi_node->is_interface_port());
+
+    // Check color differentiation: Input = Emerald (#10B981), Output = Amber (#F59E0B), Bidirectional = Purple (#A855F7)
+    assert(in_node->properties.at("fill_color") == "#10B981");
+    assert(out_node->properties.at("fill_color") == "#F59E0B");
+    assert(bi_node->properties.at("fill_color") == "#A855F7");
+
+    // Check boundary interface pins: Input and Output have 1 pin, Bidirectional has 2 pins (East and West)
+    assert(in_node->port_ids.size() == 1);
+    assert(out_node->port_ids.size() == 1);
+    assert(bi_node->port_ids.size() == 2);
+
+    const auto* bi_p1 = graph->find_port(bi_node->port_ids[0]);
+    const auto* bi_p2 = graph->find_port(bi_node->port_ids[1]);
+    assert(bi_p1 != nullptr && bi_p2 != nullptr);
+    assert((bi_p1->direction == vector::core::PortDirection::East && bi_p2->direction == vector::core::PortDirection::West) ||
+           (bi_p1->direction == vector::core::PortDirection::West && bi_p2->direction == vector::core::PortDirection::East));
+
+    // Render frame to ensure paintGL renders badges cleanly
+    canvas->render_frame_for_test();
+
+    // 2. Built-in Section & Shape Protection
+    assert(stencil_dock->has_section("CSG Basis"));
+    assert(stencil_dock->has_section("Regular Polygons"));
+    assert(stencil_dock->has_section("Hierarchy & EDA Ports"));
+    assert(stencil_dock->has_section("Connectors & Routing"));
+
+    // Attempting to delete built-in sections must fail
+    assert(!stencil_dock->remove_section("⚙ Hierarchy & EDA Ports"));
+    assert(!stencil_dock->remove_section("📐 2D Geometric Primitives (CSG Basis)"));
+    assert(stencil_dock->has_section("Hierarchy & EDA Ports"));
+
+    // Attempting to delete built-in shapes must fail
+    assert(stencil_dock->has_shape("Bidirectional Port"));
+    assert(!stencil_dock->remove_shape("Bidirectional Port"));
+    assert(stencil_dock->has_shape("Bidirectional Port"));
+    assert(!stencil_dock->remove_shape("Hierarchical Input Port"));
+    assert(stencil_dock->has_shape("Hierarchical Input Port"));
+
+    // 3. User Custom Section Management (Create, Add Elements, Remove)
+    auto* user_sec = stencil_dock->create_new_section("⚡ Power & Mixed-Signal");
+    assert(user_sec != nullptr);
+    assert(stencil_dock->has_section("Power & Mixed-Signal"));
+    assert(!stencil_dock->is_category_builtin(user_sec));
+    assert(stencil_dock->custom_section_count() >= 1);
+
+    // Add elements into user custom section
+    auto* custom_item = stencil_dock->add_shape_item(
+        "LDO Regulator", vector::gui::StencilLibraryDock::StencilItemType::ShapeRect, 0, "⚡ Power & Mixed-Signal");
+    assert(custom_item != nullptr);
+    assert(stencil_dock->has_shape("LDO Regulator"));
+    assert(!stencil_dock->is_item_builtin(custom_item));
+
+    // User can delete custom shapes from custom sections
+    assert(stencil_dock->remove_shape("LDO Regulator"));
+    assert(!stencil_dock->has_shape("LDO Regulator"));
+
+    // 4. Drag & Drop Elements from Canvas into Shapes Section
+    canvas->clear_selection();
+    canvas->select_node(bi_id, false);
+    assert(canvas->selected_count() == 1);
+
+    // Capture from selection into Shapes dock
+    stencil_dock->add_from_selection();
+    assert(stencil_dock->has_shape("bus_io"));
+
+    // Test direct drop handling via handle_dropped_template
+    vector::renderer::ShapePlacementTemplate drop_tmpl;
+    drop_tmpl.name = "CustomBidirectionalTransceiver";
+    drop_tmpl.category = vector::renderer::PlacementCategory::HierarchicalPort;
+    drop_tmpl.shape_type = vector::core::ShapeType::BidirectionalPort;
+    drop_tmpl.port_type = "inout";
+    drop_tmpl.width = 110.0;
+    drop_tmpl.height = 34.0;
+    drop_tmpl.anchor_point = {0.0, 0.0};
+    drop_tmpl.resize_point = {1.0, 1.0};
+
+    auto* dropped_node_item = stencil_dock->handle_dropped_template(drop_tmpl, user_sec);
+    assert(dropped_node_item != nullptr);
+    assert(stencil_dock->has_shape("CustomBidirectionalTransceiver"));
+    assert(!stencil_dock->is_item_builtin(dropped_node_item));
+
+    // Roundtrip verification: double-click / trigger the custom shape attaches template to cursor
+    stencil_dock->trigger_item(dropped_node_item);
+    assert(canvas->is_placement_tool_active());
+    assert(canvas->active_placement_template().name == "CustomBidirectionalTransceiver");
+    assert(canvas->active_placement_template().shape_type == vector::core::ShapeType::BidirectionalPort);
+    assert(canvas->active_placement_template().port_type == "inout");
+
+    (void)in_node;
+    (void)out_node;
+    (void)bi_node;
+    (void)bi_p1;
+    (void)bi_p2;
+    (void)custom_item;
+    (void)dropped_node_item;
+
+    // Clear placement tool
+    canvas->cancel_placement();
+    assert(!canvas->is_placement_tool_active());
+
+    // User can delete custom section
+    assert(stencil_dock->remove_section("⚡ Power & Mixed-Signal"));
+    assert(!stencil_dock->has_section("Power & Mixed-Signal"));
+
+    canvas->render_frame_for_test();
+    std::cout << "[Test 42] Bidirectional Port Differentiation & Shapes Custom Sections passed successfully!" << std::endl;
+  }
+
   std::cout << "===> All Theme System, Snapping & Hierarchical Port Smoke Tests passed successfully!" << std::endl;
   return 0;
 }

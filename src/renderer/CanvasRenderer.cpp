@@ -325,6 +325,9 @@ void CanvasRenderer::draw_node(const core::Node& node, const RenderContext& ctx,
     } else if (node.shape == core::ShapeType::OutputPort) {
       auto it_f = node.properties.find("fill_color");
       effective_fill = (it_f != node.properties.end()) ? fill_color : (node.selected ? style.selection_border : 0xFFF59E0B);
+    } else if (node.shape == core::ShapeType::BidirectionalPort || node.is_bidirectional_port()) {
+      auto it_f = node.properties.find("fill_color");
+      effective_fill = (it_f != node.properties.end()) ? fill_color : (node.selected ? style.selection_border : 0xFFA855F7);
     }
 
     // Solid fill

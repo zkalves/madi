@@ -64,7 +64,8 @@ enum class ShapeType : uint8_t {
   HierarchicalBlock,
   CustomPolygon,
   InputPort,
-  OutputPort
+  OutputPort,
+  BidirectionalPort
 };
 
 struct Node {
@@ -206,20 +207,30 @@ struct Node {
     return {center.x + dx * cos_a - dy * sin_a, center.y + dx * sin_a + dy * cos_a};
   }
 
+  [[nodiscard]] bool is_bidirectional_port() const noexcept {
+    if (shape == ShapeType::BidirectionalPort) return true;
+    auto it = properties.find("interface_kind");
+    if (it != properties.end() && (it->second == "inout" || it->second == "bidirectional")) return true;
+    auto it_p = properties.find("port_type");
+    return it_p != properties.end() && (it_p->second == "inout" || it_p->second == "bidirectional");
+  }
+
   [[nodiscard]] bool is_input_port() const noexcept {
+    if (is_bidirectional_port()) return false;
     if (shape == ShapeType::InputPort) return true;
     auto it = properties.find("interface_kind");
     return it != properties.end() && it->second == "input";
   }
 
   [[nodiscard]] bool is_output_port() const noexcept {
+    if (is_bidirectional_port()) return false;
     if (shape == ShapeType::OutputPort) return true;
     auto it = properties.find("interface_kind");
     return it != properties.end() && it->second == "output";
   }
 
   [[nodiscard]] bool is_interface_port() const noexcept {
-    return is_input_port() || is_output_port();
+    return is_input_port() || is_output_port() || is_bidirectional_port();
   }
 
   [[nodiscard]] bool is_subsystem() const noexcept {

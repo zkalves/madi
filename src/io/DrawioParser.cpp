@@ -169,6 +169,9 @@ std::string DrawioParser::export_xml(const core::GraphModel& graph,
       case core::ShapeType::OutputPort:
         shape_style += "shape=mxgraph.flowchart.terminator;fillColor=#EF4444;strokeColor=#B91C1C;fontColor=#FFFFFF;";
         break;
+      case core::ShapeType::BidirectionalPort:
+        shape_style += "shape=mxgraph.flowchart.terminator;fillColor=#A855F7;strokeColor=#7E22CE;fontColor=#FFFFFF;";
+        break;
     }
 
     auto it_fc = node.properties.find("fill_color");
@@ -375,7 +378,10 @@ bool DrawioParser::parse_mx_graph_model(std::string_view xml_data,
       } else if (style.find("shape=process") != std::string_view::npos) {
         node.shape = core::ShapeType::HierarchicalBlock;
       } else if (style.find("terminator") != std::string_view::npos) {
-        if (style.find("22C55E") != std::string_view::npos) {
+        if (style.find("A855F7") != std::string_view::npos || style.find("purple") != std::string_view::npos) {
+          node.shape = core::ShapeType::BidirectionalPort;
+          node.properties["interface_kind"] = "inout";
+        } else if (style.find("22C55E") != std::string_view::npos) {
           node.shape = core::ShapeType::InputPort;
         } else {
           node.shape = core::ShapeType::OutputPort;

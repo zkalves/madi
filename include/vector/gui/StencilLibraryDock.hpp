@@ -15,11 +15,15 @@
 #include <QDialogButtonBox>
 #include <QDockWidget>
 #include <QDrag>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
@@ -43,11 +47,17 @@
 
 namespace vector::gui {
 
+class StencilLibraryDock;
+
 class StencilTreeWidget : public QTreeWidget {
 public:
   explicit StencilTreeWidget(QWidget* parent = nullptr) : QTreeWidget(parent) {
     setDragEnabled(true);
+    setAcceptDrops(true);
+    setDropIndicatorShown(true);
   }
+
+  void set_dock(StencilLibraryDock* dock) noexcept { dock_ = dock; }
 
 protected:
   void mousePressEvent(QMouseEvent* event) override {
@@ -58,9 +68,13 @@ protected:
   }
 
   void mouseMoveEvent(QMouseEvent* event) override;
+  void dragEnterEvent(QDragEnterEvent* event) override;
+  void dragMoveEvent(QDragMoveEvent* event) override;
+  void dropEvent(QDropEvent* event) override;
 
 private:
   QPoint drag_start_pos_;
+  StencilLibraryDock* dock_{nullptr};
 };
 
 class StencilLibraryDock : public QDockWidget {
@@ -129,6 +143,7 @@ public:
 
     // Tree of stencils with prominent 28x28 icons for clear visibility
     tree_ = new StencilTreeWidget(container);
+    tree_->set_dock(this);
     tree_->setHeaderHidden(true);
     tree_->setIndentation(12);
     tree_->setAnimated(true);
@@ -148,7 +163,7 @@ public:
 
     btn_add_ = new QPushButton("➕ Add...", container);
     btn_add_->setFixedHeight(24);
-    btn_add_->setToolTip("Add a custom shape or capture from selected canvas element");
+    btn_add_->setToolTip("Add custom shape, new section, or capture from canvas element");
     btn_add_->setStyleSheet("QPushButton { font-size: 11px; padding: 2px 6px; }");
     connect(btn_add_, &QPushButton::clicked, this, &StencilLibraryDock::show_add_menu);
     action_row->addWidget(btn_add_);
@@ -156,7 +171,7 @@ public:
     btn_remove_ = new QPushButton("🗑 Remove", container);
     btn_remove_->setFixedHeight(24);
     btn_remove_->setEnabled(false);
-    btn_remove_->setToolTip("Remove selected shape from palette (Delete key)");
+    btn_remove_->setToolTip("Remove selected custom shape or custom section (Delete key)");
     btn_remove_->setStyleSheet("QPushButton { font-size: 11px; padding: 2px 6px; }");
     connect(btn_remove_, &QPushButton::clicked, this, &StencilLibraryDock::remove_current_selected);
     action_row->addWidget(btn_remove_);
@@ -181,8 +196,15 @@ public:
 
     connect(tree_, &QTreeWidget::itemSelectionChanged, this, [this]() {
       auto* current = tree_->currentItem();
-      const bool can_remove = (current != nullptr && current->parent() != nullptr);
-      btn_remove_->setEnabled(can_remove);
+      if (!current) {
+        btn_remove_->setEnabled(false);
+        return;
+      }
+      if (current->parent() == nullptr) {
+        btn_remove_->setEnabled(!is_category_builtin(current));
+      } else {
+        btn_remove_->setEnabled(!is_item_builtin(current));
+      }
     });
 
     auto* del_shortcut = new QShortcut(QKeySequence::Delete, tree_);
@@ -264,11 +286,92 @@ public:
         default: itype = IconFactory::IconType::Rectangle; break;
       }
     }
-    auto* item = add_stencil_item(cat, title, type, param, itype);
+    auto* item = add_stencil_item(cat, title, type, param, itype, QString(), false);
     item->setData(0, Qt::UserRole + 2, name);
+    item->setData(0, Qt::UserRole + 10, false);
     cat->setExpanded(true);
     tree_->setCurrentItem(item);
     return item;
+  }
+
+  [[nodiscard]] bool is_item_builtin(const QTreeWidgetItem* item) const noexcept {
+    if (!item) return false;
+    return item->data(0, Qt::UserRole + 10).toBool();
+  }
+
+  [[nodiscard]] bool is_category_builtin(const QTreeWidgetItem* cat) const noexcept {
+    if (!cat) return false;
+    return cat->data(0, Qt::UserRole + 10).toBool();
+  }
+
+  QTreeWidgetItem* create_new_section(const QString& name) {
+    QString clean_name = name.trimmed();
+    if (clean_name.isEmpty()) clean_name = "New Section";
+    for (int i = 0; i < tree_->topLevelItemCount(); ++i) {
+      if (tree_->topLevelItem(i)->text(0) == clean_name) {
+        return tree_->topLevelItem(i);
+      }
+    }
+    auto* new_cat = new QTreeWidgetItem(tree_, QStringList() << clean_name);
+    new_cat->setData(0, Qt::UserRole + 10, false);
+    new_cat->setExpanded(true);
+    QFont bold_font = new_cat->font(0);
+    bold_font.setBold(true);
+    new_cat->setFont(0, bold_font);
+    return new_cat;
+  }
+
+  [[nodiscard]] bool has_section(const QString& name) const noexcept {
+    for (int i = 0; i < tree_->topLevelItemCount(); ++i) {
+      if (tree_->topLevelItem(i)->text(0).contains(name, Qt::CaseInsensitive)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  [[nodiscard]] int custom_section_count() const noexcept {
+    int count = 0;
+    for (int i = 0; i < tree_->topLevelItemCount(); ++i) {
+      if (!is_category_builtin(tree_->topLevelItem(i))) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  bool remove_section(const QString& name) {
+    for (int i = 0; i < tree_->topLevelItemCount(); ++i) {
+      auto* cat = tree_->topLevelItem(i);
+      if (cat->text(0).contains(name, Qt::CaseInsensitive)) {
+        if (is_category_builtin(cat)) return false; // Built-in sections protected!
+        delete tree_->takeTopLevelItem(i);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void prompt_new_section_dialog() {
+    bool ok = false;
+    QString name = QInputDialog::getText(
+        this, "New Section", "Section Name:",
+        QLineEdit::Normal, "⭐ My Custom Shapes", &ok);
+    if (ok && !name.trimmed().isEmpty()) {
+      auto* cat = create_new_section(name.trimmed());
+      tree_->setCurrentItem(cat);
+    }
+  }
+
+  void prompt_rename_section(QTreeWidgetItem* cat) {
+    if (!cat || is_category_builtin(cat)) return;
+    bool ok = false;
+    QString name = QInputDialog::getText(
+        this, "Rename Section", "New Section Name:",
+        QLineEdit::Normal, cat->text(0), &ok);
+    if (ok && !name.trimmed().isEmpty()) {
+      cat->setText(0, name.trimmed());
+    }
   }
 
   bool remove_shape(const QString& name) {
@@ -277,6 +380,7 @@ public:
       for (int j = 0; j < cat->childCount(); ++j) {
         auto* child = cat->child(j);
         if (child->text(0).contains(name, Qt::CaseInsensitive)) {
+          if (is_item_builtin(child)) return false; // Built-in shapes protected!
           cat->removeChild(child);
           delete child;
           return true;
@@ -296,6 +400,113 @@ public:
   [[nodiscard]] QPushButton* remove_button() const noexcept { return btn_remove_; }
   [[nodiscard]] QPushButton* insert_button() const noexcept { return btn_insert_; }
 
+  QTreeWidgetItem* handle_dropped_template(const renderer::ShapePlacementTemplate& tmpl, QTreeWidgetItem* target_item = nullptr) {
+    QTreeWidgetItem* target_cat = nullptr;
+    if (target_item) {
+      if (target_item->parent() == nullptr) {
+        if (!is_category_builtin(target_item)) {
+          target_cat = target_item;
+        }
+      } else {
+        if (!is_category_builtin(target_item->parent())) {
+          target_cat = target_item->parent();
+        }
+      }
+    }
+    if (!target_cat) {
+      for (int i = 0; i < tree_->topLevelItemCount(); ++i) {
+        auto* cat = tree_->topLevelItem(i);
+        if (!is_category_builtin(cat)) {
+          target_cat = cat;
+          break;
+        }
+      }
+    }
+    if (!target_cat) {
+      target_cat = create_new_section("⭐ Custom Shapes");
+    }
+
+    QString title = QString::fromStdString(tmpl.name.empty() ? "Custom Shape" : tmpl.name);
+    StencilItemType stype = StencilItemType::CustomShape;
+    IconFactory::IconType itype = IconFactory::IconType::Rectangle;
+    int sides = 0;
+
+    if (tmpl.category == renderer::PlacementCategory::HierarchicalPort) {
+      if (tmpl.shape_type == core::ShapeType::BidirectionalPort || tmpl.port_type == "inout" || tmpl.port_type == "bidirectional") {
+        stype = StencilItemType::ShapeBiPort;
+        itype = IconFactory::IconType::BidirectionalPort;
+      } else if (tmpl.is_input_port || tmpl.port_type == "in") {
+        stype = StencilItemType::ShapeInPort;
+        itype = IconFactory::IconType::InputPort;
+      } else {
+        stype = StencilItemType::ShapeOutPort;
+        itype = IconFactory::IconType::OutputPort;
+      }
+    } else if (tmpl.category == renderer::PlacementCategory::SubsystemBuiltin) {
+      stype = StencilItemType::SubsystemBuiltin;
+      itype = IconFactory::IconType::SubsystemBlock;
+    } else if (tmpl.category == renderer::PlacementCategory::SubsystemFile) {
+      stype = StencilItemType::SubsystemFile;
+      itype = IconFactory::IconType::SubsystemFile;
+    } else if (tmpl.category == renderer::PlacementCategory::RegularPolygon) {
+      stype = StencilItemType::ShapePolygonN;
+      sides = tmpl.polygon_sides;
+      itype = (sides == 3) ? IconFactory::IconType::Triangle :
+              (sides == 4) ? IconFactory::IconType::Diamond :
+              (sides == 5) ? IconFactory::IconType::Pentagon :
+              (sides == 6) ? IconFactory::IconType::PolygonHex :
+              (sides == 8) ? IconFactory::IconType::Octagon : IconFactory::IconType::PolygonDraw;
+    } else if (tmpl.category == renderer::PlacementCategory::CustomPolygon) {
+      stype = StencilItemType::CustomShape;
+      itype = IconFactory::IconType::PolygonDraw;
+    } else {
+      switch (tmpl.shape_type) {
+        case core::ShapeType::Rectangle:
+          stype = StencilItemType::ShapeRect;
+          itype = IconFactory::IconType::Rectangle;
+          break;
+        case core::ShapeType::RoundedRect:
+          stype = StencilItemType::ShapeRoundedRect;
+          itype = IconFactory::IconType::RoundedRect;
+          break;
+        case core::ShapeType::Ellipse:
+          stype = StencilItemType::ShapeEllipse;
+          itype = IconFactory::IconType::Ellipse;
+          break;
+        case core::ShapeType::BidirectionalPort:
+          stype = StencilItemType::ShapeBiPort;
+          itype = IconFactory::IconType::BidirectionalPort;
+          break;
+        case core::ShapeType::InputPort:
+          stype = StencilItemType::ShapeInPort;
+          itype = IconFactory::IconType::InputPort;
+          break;
+        case core::ShapeType::OutputPort:
+          stype = StencilItemType::ShapeOutPort;
+          itype = IconFactory::IconType::OutputPort;
+          break;
+        default:
+          stype = StencilItemType::CustomShape;
+          itype = IconFactory::IconType::Rectangle;
+          break;
+      }
+    }
+
+    auto* item = new QTreeWidgetItem(target_cat, QStringList() << title);
+    item->setData(0, Qt::UserRole, static_cast<int>(stype));
+    item->setData(0, Qt::UserRole + 1, sides);
+    item->setData(0, Qt::UserRole + 2, title);
+    item->setData(0, Qt::UserRole + 3, static_cast<int>(itype));
+    item->setData(0, Qt::UserRole + 4, QPointF(tmpl.anchor_point.x, tmpl.anchor_point.y));
+    item->setData(0, Qt::UserRole + 5, QPointF(tmpl.resize_point.x, tmpl.resize_point.y));
+    item->setData(0, Qt::UserRole + 6, renderer::serialize_placement_template(tmpl));
+    item->setData(0, Qt::UserRole + 10, false); // NOT builtin!
+    item->setIcon(0, IconFactory::create_icon(itype, current_fg_));
+    target_cat->setExpanded(true);
+    tree_->setCurrentItem(item);
+    return item;
+  }
+
 public slots:
   void insert_current_selected() {
     auto* current = tree_->currentItem();
@@ -308,11 +519,19 @@ public slots:
     auto* current = tree_->currentItem();
     if (!current) return false;
     if (current->parent() == nullptr) {
-      while (current->childCount() > 0) {
-        delete current->takeChild(0);
+      if (is_category_builtin(current)) {
+        return false; // Built-in category cannot be removed!
       }
-      btn_remove_->setEnabled(false);
-      return true;
+      int idx = tree_->indexOfTopLevelItem(current);
+      if (idx >= 0) {
+        delete tree_->takeTopLevelItem(idx);
+        btn_remove_->setEnabled(false);
+        return true;
+      }
+      return false;
+    }
+    if (is_item_builtin(current)) {
+      return false; // Built-in shape cannot be removed!
     }
     auto* parent = current->parent();
     parent->removeChild(current);
@@ -323,6 +542,7 @@ public slots:
 
   void show_add_menu() {
     QMenu menu(this);
+    auto* act_new_sec = menu.addAction("📁 New Section...");
     auto* act_custom = menu.addAction("📐 Add Custom Shape / N-gon...");
     auto* act_from_sel = menu.addAction("⭐ Add Selected from Canvas");
     if (!canvas_ || canvas_->selected_count() == 0) {
@@ -333,7 +553,9 @@ public slots:
 
     QPoint popup_pos = btn_add_ ? btn_add_->mapToGlobal(QPoint(0, btn_add_->height())) : QCursor::pos();
     QAction* chosen = menu.exec(popup_pos);
-    if (chosen == act_custom) {
+    if (chosen == act_new_sec) {
+      prompt_new_section_dialog();
+    } else if (chosen == act_custom) {
       prompt_custom_shape_dialog();
     } else if (chosen == act_from_sel) {
       add_from_selection();
@@ -411,54 +633,45 @@ public slots:
     const auto* node = graph->find_node(sel.front());
     if (!node) return;
 
-    QString name = QString::fromStdString(node->name.empty() ? "Canvas Shape" : node->name);
-    StencilItemType stype = StencilItemType::ShapeRect;
-    IconFactory::IconType itype = IconFactory::IconType::Rectangle;
-    int sides = 0;
+    renderer::ShapePlacementTemplate tmpl;
+    tmpl.name = node->name.empty() ? "Canvas Shape" : node->name;
+    tmpl.width = node->bounds.width;
+    tmpl.height = node->bounds.height;
+    tmpl.anchor_point = node->symbol_anchor();
+    tmpl.resize_point = node->symbol_resize_point();
 
-    switch (node->shape) {
-      case core::ShapeType::Rectangle:
-        stype = StencilItemType::ShapeRect;
-        itype = IconFactory::IconType::Rectangle;
-        break;
-      case core::ShapeType::RoundedRect:
-        stype = StencilItemType::ShapeRoundedRect;
-        itype = IconFactory::IconType::RoundedRect;
-        break;
-      case core::ShapeType::Ellipse:
-        stype = StencilItemType::ShapeEllipse;
-        itype = IconFactory::IconType::Ellipse;
-        break;
-      case core::ShapeType::CustomPolygon:
-        stype = StencilItemType::ShapePolygonN;
-        sides = node->polygon_vertices.empty() ? 6 : static_cast<int>(node->polygon_vertices.size());
-        if (sides == 3) itype = IconFactory::IconType::Triangle;
-        else if (sides == 4) itype = IconFactory::IconType::Diamond;
-        else if (sides == 5) itype = IconFactory::IconType::Pentagon;
-        else if (sides == 6) itype = IconFactory::IconType::PolygonHex;
-        else if (sides == 7) itype = IconFactory::IconType::Heptagon;
-        else if (sides == 8) itype = IconFactory::IconType::Octagon;
-        else if (sides == 10) itype = IconFactory::IconType::Decagon;
-        else if (sides == 12) itype = IconFactory::IconType::Dodecagon;
-        else itype = IconFactory::IconType::PolygonDraw;
-        break;
-      case core::ShapeType::InputPort:
-        stype = StencilItemType::ShapeInPort;
-        itype = IconFactory::IconType::InputPort;
-        break;
-      case core::ShapeType::OutputPort:
-        stype = StencilItemType::ShapeOutPort;
-        itype = IconFactory::IconType::OutputPort;
-        break;
-      case core::ShapeType::HierarchicalBlock:
-        stype = StencilItemType::SubsystemBuiltin;
-        itype = IconFactory::IconType::SubsystemBlock;
-        break;
+    if (node->is_interface_port()) {
+      tmpl.category = renderer::PlacementCategory::HierarchicalPort;
+      if (node->is_bidirectional_port()) {
+        tmpl.shape_type = core::ShapeType::BidirectionalPort;
+        tmpl.port_type = "inout";
+        tmpl.is_input_port = false;
+      } else if (node->is_input_port()) {
+        tmpl.shape_type = core::ShapeType::InputPort;
+        tmpl.port_type = "in";
+        tmpl.is_input_port = true;
+      } else {
+        tmpl.shape_type = core::ShapeType::OutputPort;
+        tmpl.port_type = "out";
+        tmpl.is_input_port = false;
+      }
+    } else if (node->is_subsystem()) {
+      if (node->is_file_subsystem()) {
+        tmpl.category = renderer::PlacementCategory::SubsystemFile;
+        tmpl.file_path = node->subsystem_file();
+      } else {
+        tmpl.category = renderer::PlacementCategory::SubsystemBuiltin;
+      }
+    } else if (node->shape == core::ShapeType::CustomPolygon) {
+      tmpl.category = renderer::PlacementCategory::CustomPolygon;
+      tmpl.shape_type = core::ShapeType::CustomPolygon;
+      tmpl.custom_vertices = node->polygon_vertices;
+    } else {
+      tmpl.category = renderer::PlacementCategory::ShapeType;
+      tmpl.shape_type = node->shape;
     }
 
-    auto* item = add_shape_item(name + " (Copy)", stype, sides, "⭐ Custom Shapes", itype);
-    item->setData(0, Qt::UserRole + 4, QPointF(node->symbol_anchor().x, node->symbol_anchor().y));
-    item->setData(0, Qt::UserRole + 5, QPointF(node->symbol_resize_point().x, node->symbol_resize_point().y));
+    handle_dropped_template(tmpl, tree_->currentItem());
   }
 
 private:
@@ -468,6 +681,7 @@ private:
       if (cat->text(0) == cat_name) return cat;
     }
     auto* new_cat = new QTreeWidgetItem(tree_, QStringList() << cat_name);
+    new_cat->setData(0, Qt::UserRole + 10, false); // Custom category!
     new_cat->setExpanded(true);
     QFont bold_font = new_cat->font(0);
     bold_font.setBold(true);
@@ -477,101 +691,112 @@ private:
 
   void populate_stencils() {
     tree_->clear();
+    populate_builtin_stencils();
+  }
 
+  void populate_builtin_stencils() {
     // 1. 2D Geometric Primitives (Universal Constructive Basis)
-    auto* cat_primitives = new QTreeWidgetItem(tree_, QStringList() << "📐 2D Geometric Primitives (CSG Basis)");
+    auto* cat_primitives = new QTreeWidgetItem(QStringList() << "📐 2D Geometric Primitives (CSG Basis)");
+    cat_primitives->setData(0, Qt::UserRole + 10, true);
     cat_primitives->setExpanded(true);
     QFont bold_font = cat_primitives->font(0);
     bold_font.setBold(true);
     cat_primitives->setFont(0, bold_font);
+    tree_->insertTopLevelItem(0, cat_primitives);
 
     add_stencil_item(cat_primitives, "Rectangle Block", StencilItemType::ShapeRect, 0,
                      IconFactory::IconType::Rectangle,
-                     "Rectangle Quadrilateral (R)\nFundamental orthogonal basis for chips, blocks, and frames.");
+                     "Rectangle Quadrilateral (R)\nFundamental orthogonal basis for chips, blocks, and frames.", true);
     add_stencil_item(cat_primitives, "Right-Angled Triangle", StencilItemType::ShapeRightTriangle, 0,
                      IconFactory::IconType::RightTriangle,
-                     "Right Triangle (45°-90°-45°)\nFundamental basis for triangulation, slopes, chamfers, and ramps.");
+                     "Right Triangle (45°-90°-45°)\nFundamental basis for triangulation, slopes, chamfers, and ramps.", true);
     add_stencil_item(cat_primitives, "Isosceles Triangle", StencilItemType::ShapeTriangle, 3,
                      IconFactory::IconType::Triangle,
-                     "Equilateral/Isosceles Triangle (3-gon)\nSymmetric directional wedge basis for delta connections and ramps.");
+                     "Equilateral/Isosceles Triangle (3-gon)\nSymmetric directional wedge basis for delta connections and ramps.", true);
     add_stencil_item(cat_primitives, "State Ellipse & Circle", StencilItemType::ShapeEllipse, 0,
                      IconFactory::IconType::Ellipse,
-                     "Circle & Ellipse (E)\nFundamental curved boundary basis for circular arcs, holes, cams, and washers.");
+                     "Circle & Ellipse (E)\nFundamental curved boundary basis for circular arcs, holes, cams, and washers.", true);
     add_stencil_item(cat_primitives, "Rounded Rectangle", StencilItemType::ShapeRoundedRect, 0,
                      IconFactory::IconType::RoundedRect,
-                     "Rounded Rectangle (Stadium/Pill)\nCurved corner box basis with smooth radius corners.");
+                     "Rounded Rectangle (Stadium/Pill)\nCurved corner box basis with smooth radius corners.", true);
     add_stencil_item(cat_primitives, "Diamond / Rhombus", StencilItemType::ShapeDiamond, 4,
                      IconFactory::IconType::Diamond,
-                     "Diamond / Rhombus (4-gon)\nRotated quadrilateral basis for decision blocks and flow branch gates.");
+                     "Diamond / Rhombus (4-gon)\nRotated quadrilateral basis for decision blocks and flow branch gates.", true);
     add_stencil_item(cat_primitives, "Parallelogram", StencilItemType::ShapeParallelogram, 0,
                      IconFactory::IconType::Parallelogram,
-                     "Parallelogram\nSheared quadrilateral basis for flowchart I/O and skewed projections.");
+                     "Parallelogram\nSheared quadrilateral basis for flowchart I/O and skewed projections.", true);
     add_stencil_item(cat_primitives, "Trapezoid", StencilItemType::ShapeTrapezoid, 0,
                      IconFactory::IconType::Trapezoid,
-                     "Trapezoid\nTapered quadrilateral basis for funnels, perspective boxes, and flow pipelines.");
+                     "Trapezoid\nTapered quadrilateral basis for funnels, perspective boxes, and flow pipelines.", true);
     add_stencil_item(cat_primitives, "Orthogonal Cross (+)", StencilItemType::ShapeCross, 0,
                      IconFactory::IconType::Cross,
-                     "Orthogonal Cross (+)\n12-vertex symmetric orthogonal cross for junctions, fiducials, and safety signs.");
+                     "Orthogonal Cross (+)\n12-vertex symmetric orthogonal cross for junctions, fiducials, and safety signs.", true);
     add_stencil_item(cat_primitives, "5-Pointed Star", StencilItemType::ShapeStar, 5,
                      IconFactory::IconType::Star,
-                     "Star (5-Pointed)\nConcave star polygon basis. Combine or intersect with circles and polygons.");
+                     "Star (5-Pointed)\nConcave star polygon basis. Combine or intersect with circles and polygons.", true);
     add_stencil_item(cat_primitives, "Cylinder / Storage Drum", StencilItemType::ShapeCylinder, 0,
                      IconFactory::IconType::Cylinder,
-                     "Cylinder / Database Drum\n3D curved cylinder projection basis for databases, capacitors, and barrels.");
+                     "Cylinder / Database Drum\n3D curved cylinder projection basis for databases, capacitors, and barrels.", true);
     add_stencil_item(cat_primitives, "Arrow Block / Chevron", StencilItemType::ShapeChevron, 0,
                      IconFactory::IconType::Chevron,
-                     "Arrow Block / Chevron\nDirectional block basis for pipeline stages, flow queues, and vectors.");
+                     "Arrow Block / Chevron\nDirectional block basis for pipeline stages, flow queues, and vectors.", true);
     add_stencil_item(cat_primitives, "Custom Polygon Tool", StencilItemType::ShapePolygonTool, 0,
                      IconFactory::IconType::PolygonDraw,
-                     "Custom Polygon Tool (P)\nClick points on canvas to draw ANY arbitrary polygonal shape with any number of vertices.");
+                     "Custom Polygon Tool (P)\nClick points on canvas to draw ANY arbitrary polygonal shape with any number of vertices.", true);
 
     // 2. Regular N-gon Series
-    auto* cat_ngon = new QTreeWidgetItem(tree_, QStringList() << "⬡ Regular Polygons (N-gon Series)");
+    auto* cat_ngon = new QTreeWidgetItem(QStringList() << "⬡ Regular Polygons (N-gon Series)");
+    cat_ngon->setData(0, Qt::UserRole + 10, true);
     cat_ngon->setExpanded(true);
     cat_ngon->setFont(0, bold_font);
+    tree_->insertTopLevelItem(1, cat_ngon);
 
     add_stencil_item(cat_ngon, "Triangle (3-gon)", StencilItemType::ShapeTriangle, 3,
-                     IconFactory::IconType::Triangle, "Regular 3-sided polygon (Equilateral Triangle)");
+                     IconFactory::IconType::Triangle, "Regular 3-sided polygon (Equilateral Triangle)", true);
     add_stencil_item(cat_ngon, "Diamond (4-gon)", StencilItemType::ShapeDiamond, 4,
-                     IconFactory::IconType::Diamond, "Regular 4-sided polygon (Square / Rhombus)");
+                     IconFactory::IconType::Diamond, "Regular 4-sided polygon (Square / Rhombus)", true);
     add_stencil_item(cat_ngon, "Pentagon (5-gon)", StencilItemType::ShapePentagon, 5,
-                     IconFactory::IconType::Pentagon, "Regular 5-sided polygon");
+                     IconFactory::IconType::Pentagon, "Regular 5-sided polygon", true);
     add_stencil_item(cat_ngon, "Hexagon (6-gon)", StencilItemType::ShapeHexagon, 6,
-                     IconFactory::IconType::PolygonHex, "Regular 6-sided polygon (Honeycombs, pads)");
+                     IconFactory::IconType::PolygonHex, "Regular 6-sided polygon (Honeycombs, pads)", true);
     add_stencil_item(cat_ngon, "Heptagon (7-gon)", StencilItemType::ShapeHeptagon, 7,
-                     IconFactory::IconType::Heptagon, "Regular 7-sided polygon");
+                     IconFactory::IconType::Heptagon, "Regular 7-sided polygon", true);
     add_stencil_item(cat_ngon, "Octagon (8-gon)", StencilItemType::ShapeOctagon, 8,
-                     IconFactory::IconType::Octagon, "Regular 8-sided polygon");
+                     IconFactory::IconType::Octagon, "Regular 8-sided polygon", true);
     add_stencil_item(cat_ngon, "Decagon (10-gon)", StencilItemType::ShapeDecagon, 10,
-                     IconFactory::IconType::Decagon, "Regular 10-sided polygon");
+                     IconFactory::IconType::Decagon, "Regular 10-sided polygon", true);
     add_stencil_item(cat_ngon, "Dodecagon (12-gon)", StencilItemType::ShapeDodecagon, 12,
-                     IconFactory::IconType::Dodecagon, "Regular 12-sided polygon");
+                     IconFactory::IconType::Dodecagon, "Regular 12-sided polygon", true);
 
     // 3. Hierarchy & Ports Category
-    auto* cat_ports = new QTreeWidgetItem(tree_, QStringList() << "⚙ Hierarchy & EDA Ports");
+    auto* cat_ports = new QTreeWidgetItem(QStringList() << "⚙ Hierarchy & EDA Ports");
+    cat_ports->setData(0, Qt::UserRole + 10, true);
     cat_ports->setExpanded(true);
     cat_ports->setFont(0, bold_font);
+    tree_->insertTopLevelItem(2, cat_ports);
 
     add_stencil_item(cat_ports, "Hierarchical Input Port", StencilItemType::ShapeInPort, 0,
-                     IconFactory::IconType::InputPort, "Hierarchical input signal boundary port (I)");
+                     IconFactory::IconType::InputPort, "Hierarchical input signal boundary port (I)", true);
     add_stencil_item(cat_ports, "Hierarchical Output Port", StencilItemType::ShapeOutPort, 0,
-                     IconFactory::IconType::OutputPort, "Hierarchical output signal boundary port (O)");
+                     IconFactory::IconType::OutputPort, "Hierarchical output signal boundary port (O)", true);
     add_stencil_item(cat_ports, "Bidirectional Port", StencilItemType::ShapeBiPort, 0,
-                     IconFactory::IconType::BidirectionalPort, "Bidirectional I/O interface port");
+                     IconFactory::IconType::BidirectionalPort, "Bidirectional I/O interface port", true);
     add_stencil_item(cat_ports, "Built-in Subsystem (Embedded)", StencilItemType::SubsystemBuiltin, 0,
-                     IconFactory::IconType::SubsystemBlock, "Hierarchical subsystem block embedded in current diagram (H)");
+                     IconFactory::IconType::SubsystemBlock, "Hierarchical subsystem block embedded in current diagram (H)", true);
     add_stencil_item(cat_ports, "External File Subsystem (.yaml)", StencilItemType::SubsystemFile, 0,
-                     IconFactory::IconType::SubsystemFile, "Hierarchical subsystem linked to an external file");
+                     IconFactory::IconType::SubsystemFile, "Hierarchical subsystem linked to an external file", true);
 
     // 4. Connectors & Routing Category
-    auto* cat_wiring = new QTreeWidgetItem(tree_, QStringList() << "⚡ Connectors & Routing");
+    auto* cat_wiring = new QTreeWidgetItem(QStringList() << "⚡ Connectors & Routing");
+    cat_wiring->setData(0, Qt::UserRole + 10, true);
     cat_wiring->setExpanded(true);
     cat_wiring->setFont(0, bold_font);
+    tree_->insertTopLevelItem(3, cat_wiring);
 
     add_stencil_item(cat_wiring, "Orthogonal Net Connector", StencilItemType::ToolConnector, 0,
-                     IconFactory::IconType::Wire, "Orthogonal obstacle-avoiding net wire (C)");
+                     IconFactory::IconType::Wire, "Orthogonal obstacle-avoiding net wire (C)", true);
     add_stencil_item(cat_wiring, "Auto-Routing Arrow", StencilItemType::ToolAutoArrow, 0,
-                     IconFactory::IconType::Wire, "2-click auto-routing arrow with multipoint branching");
+                     IconFactory::IconType::Wire, "2-click auto-routing arrow with multipoint branching", true);
   }
 
   QTreeWidgetItem* add_stencil_item(
@@ -580,11 +805,13 @@ private:
       StencilItemType type,
       int param,
       IconFactory::IconType itype,
-      const QString& tooltip = QString()) {
+      const QString& tooltip = QString(),
+      bool is_builtin = true) {
     auto* item = new QTreeWidgetItem(parent, QStringList() << title);
     item->setData(0, Qt::UserRole, static_cast<int>(type));
     item->setData(0, Qt::UserRole + 1, param);
     item->setData(0, Qt::UserRole + 3, static_cast<int>(itype));
+    item->setData(0, Qt::UserRole + 10, is_builtin);
     item->setIcon(0, IconFactory::create_icon(itype, current_fg_));
     if (!tooltip.isEmpty()) {
       item->setToolTip(0, tooltip);
@@ -776,7 +1003,8 @@ public:
         break;
       case StencilItemType::ShapeBiPort:
         tmpl.category = renderer::PlacementCategory::HierarchicalPort;
-        tmpl.is_input_port = true;
+        tmpl.shape_type = core::ShapeType::BidirectionalPort;
+        tmpl.is_input_port = false;
         tmpl.port_type = "inout";
         tmpl.name = "inout_port";
         tmpl.width = 84.0;
@@ -817,6 +1045,16 @@ public:
 
   void trigger_item(QTreeWidgetItem* item) {
     if (!canvas_ || !item) return;
+
+    if (item->data(0, Qt::UserRole + 6).isValid()) {
+      const QByteArray bytes = item->data(0, Qt::UserRole + 6).toByteArray();
+      renderer::ShapePlacementTemplate tmpl;
+      if (renderer::deserialize_placement_template(bytes, tmpl)) {
+        canvas_->start_shape_placement(tmpl);
+        return;
+      }
+    }
+
     QVariant val = item->data(0, Qt::UserRole);
     if (!val.isValid()) return;
 
@@ -882,11 +1120,26 @@ private:
   void show_context_menu(const QPoint& pt) {
     auto* item = tree_->itemAt(pt);
     QMenu menu(this);
-    if (item && item->parent() != nullptr) {
+    if (item && item->parent() == nullptr) {
+      if (is_category_builtin(item)) {
+        auto* act_prot = menu.addAction("🔒 Built-in Section (Protected)");
+        act_prot->setEnabled(false);
+      } else {
+        menu.addAction("✏ Rename Section...", this, [this, item]() { prompt_rename_section(item); });
+        menu.addAction("🗑 Delete Section", this, &StencilLibraryDock::remove_current_selected);
+      }
+      menu.addSeparator();
+    } else if (item && item->parent() != nullptr) {
       menu.addAction("➕ Insert onto Canvas", this, [this, item]() { trigger_item(item); });
-      menu.addAction("🗑 Remove Shape", this, &StencilLibraryDock::remove_current_selected);
+      if (is_item_builtin(item)) {
+        auto* act_prot = menu.addAction("🔒 Built-in Shape (Protected)");
+        act_prot->setEnabled(false);
+      } else {
+        menu.addAction("🗑 Remove Shape", this, &StencilLibraryDock::remove_current_selected);
+      }
       menu.addSeparator();
     }
+    menu.addAction("📁 New Section...", this, &StencilLibraryDock::prompt_new_section_dialog);
     menu.addAction("📐 Add Custom Shape / N-gon...", this, &StencilLibraryDock::prompt_custom_shape_dialog);
     auto* act_sel = menu.addAction("⭐ Add Selected from Canvas", this, &StencilLibraryDock::add_from_selection);
     if (!canvas_ || canvas_->selected_count() == 0) {
@@ -930,27 +1183,33 @@ inline void StencilTreeWidget::mouseMoveEvent(QMouseEvent* event) {
     return;
   }
 
-  const int param = item->data(0, Qt::UserRole + 1).toInt();
-  const QString custom_name = item->data(0, Qt::UserRole + 2).toString();
   const QString title = item->text(0);
+  QByteArray item_data;
 
-  renderer::ShapePlacementTemplate tmpl = StencilLibraryDock::template_from_stencil_data(type, param, custom_name);
-  if (tmpl.name.empty() && !title.isEmpty()) {
-    tmpl.name = title.toStdString();
-  }
-  if (item->data(0, Qt::UserRole + 4).isValid()) {
-    const QPointF pt = item->data(0, Qt::UserRole + 4).toPointF();
-    tmpl.anchor_point = {pt.x(), pt.y()};
-  }
-  if (item->data(0, Qt::UserRole + 5).isValid()) {
-    const QPointF pt = item->data(0, Qt::UserRole + 5).toPointF();
-    tmpl.resize_point = {pt.x(), pt.y()};
-  }
+  if (item->data(0, Qt::UserRole + 6).isValid()) {
+    item_data = item->data(0, Qt::UserRole + 6).toByteArray();
+  } else {
+    const int param = item->data(0, Qt::UserRole + 1).toInt();
+    const QString custom_name = item->data(0, Qt::UserRole + 2).toString();
 
-  const QByteArray item_data = renderer::serialize_placement_template(tmpl);
+    renderer::ShapePlacementTemplate tmpl = StencilLibraryDock::template_from_stencil_data(type, param, custom_name);
+    if (tmpl.name.empty() && !title.isEmpty()) {
+      tmpl.name = title.toStdString();
+    }
+    if (item->data(0, Qt::UserRole + 4).isValid()) {
+      const QPointF pt = item->data(0, Qt::UserRole + 4).toPointF();
+      tmpl.anchor_point = {pt.x(), pt.y()};
+    }
+    if (item->data(0, Qt::UserRole + 5).isValid()) {
+      const QPointF pt = item->data(0, Qt::UserRole + 5).toPointF();
+      tmpl.resize_point = {pt.x(), pt.y()};
+    }
+    item_data = renderer::serialize_placement_template(tmpl);
+  }
 
   auto* mime = new QMimeData();
   mime->setData("application/x-vector-stencil", item_data);
+  mime->setData("application/x-vector-diagram-shape", item_data);
   mime->setText(title);
 
   auto* drag = new QDrag(this);
@@ -962,6 +1221,45 @@ inline void StencilTreeWidget::mouseMoveEvent(QMouseEvent* event) {
     drag->setHotSpot(QPoint(pix.width() / 2, pix.height() / 2));
   }
   drag->exec(Qt::CopyAction | Qt::MoveAction);
+}
+
+inline void StencilTreeWidget::dragEnterEvent(QDragEnterEvent* event) {
+  if (event->mimeData()->hasFormat("application/x-vector-stencil") ||
+      event->mimeData()->hasFormat("application/x-vector-diagram-shape") ||
+      event->mimeData()->hasText()) {
+    event->acceptProposedAction();
+  } else {
+    event->ignore();
+  }
+}
+
+inline void StencilTreeWidget::dragMoveEvent(QDragMoveEvent* event) {
+  if (event->mimeData()->hasFormat("application/x-vector-stencil") ||
+      event->mimeData()->hasFormat("application/x-vector-diagram-shape") ||
+      event->mimeData()->hasText()) {
+    event->acceptProposedAction();
+  } else {
+    event->ignore();
+  }
+}
+
+inline void StencilTreeWidget::dropEvent(QDropEvent* event) {
+  if (event->mimeData()->hasFormat("application/x-vector-stencil") ||
+      event->mimeData()->hasFormat("application/x-vector-diagram-shape")) {
+    const QByteArray bytes = event->mimeData()->hasFormat("application/x-vector-stencil")
+        ? event->mimeData()->data("application/x-vector-stencil")
+        : event->mimeData()->data("application/x-vector-diagram-shape");
+    renderer::ShapePlacementTemplate tmpl;
+    if (renderer::deserialize_placement_template(bytes, tmpl)) {
+      auto* target = itemAt(event->position().toPoint());
+      if (dock_) {
+        dock_->handle_dropped_template(tmpl, target);
+      }
+      event->acceptProposedAction();
+      return;
+    }
+  }
+  QTreeWidget::dropEvent(event);
 }
 
 } // namespace vector::gui

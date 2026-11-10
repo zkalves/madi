@@ -259,6 +259,7 @@ StorageResult StorageEngine::deserialize_yaml(std::string_view yaml_text,
     if (val == "4" || val == "custompolygon" || val == "custom_polygon" || val == "polygon") return core::ShapeType::CustomPolygon;
     if (val == "5" || val == "inputport" || val == "input_port" || val == "input") return core::ShapeType::InputPort;
     if (val == "6" || val == "outputport" || val == "output_port" || val == "output") return core::ShapeType::OutputPort;
+    if (val == "7" || val == "bidirectionalport" || val == "bidirectional_port" || val == "inoutport" || val == "inout_port" || val == "inout" || val == "bidirectional") return core::ShapeType::BidirectionalPort;
     try {
       return static_cast<core::ShapeType>(std::stoi(val));
     } catch (...) {

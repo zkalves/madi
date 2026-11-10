@@ -7,6 +7,7 @@
 #ifdef VECTOR_ENABLE_QT
 #include <QApplication>
 #include <QContextMenuEvent>
+#include <QDrag>
 #include <QFileInfo>
 #include <QMenu>
 #include <QPainter>
@@ -193,7 +194,7 @@ core::NodeId CanvasWidget::instantiate_template_at(const ShapePlacementTemplate&
       break;
 
     case PlacementCategory::HierarchicalPort:
-      nid = add_hierarchical_port(center_world, tmpl.is_input_port, tmpl.port_type, false);
+      nid = add_hierarchical_port(center_world, tmpl.port_type, tmpl.name, false);
       break;
 
     case PlacementCategory::SubsystemBuiltin:
@@ -2341,6 +2342,10 @@ core::NodeId CanvasWidget::add_subsystem(core::Vec2d center, const std::string& 
 }
 
 core::NodeId CanvasWidget::add_hierarchical_port(core::Vec2d pos, bool is_input, const std::string& name, bool snap_pos) {
+  return add_hierarchical_port(pos, std::string(is_input ? "in" : "out"), name, snap_pos);
+}
+
+core::NodeId CanvasWidget::add_hierarchical_port(core::Vec2d pos, const std::string& port_type, const std::string& name, bool snap_pos) {
   if (!graph_model_) return core::InvalidNodeId;
 
   if (snap_pos && grid_manager_ && grid_manager_->is_snap_enabled() && grid::has_flag(grid_manager_->snap_flags(), grid::SnapFlags::Grid)) {
@@ -2351,20 +2356,25 @@ core::NodeId CanvasWidget::add_hierarchical_port(core::Vec2d pos, bool is_input,
     }
   }
 
+  const bool is_bi = (port_type == "inout" || port_type == "bidirectional");
+  const bool is_input = !is_bi && (port_type == "in" || port_type == "input");
+
   core::Node node;
-  node.shape = is_input ? core::ShapeType::InputPort : core::ShapeType::OutputPort;
-  node.properties["interface_kind"] = is_input ? "input" : "output";
+  node.shape = is_bi ? core::ShapeType::BidirectionalPort : (is_input ? core::ShapeType::InputPort : core::ShapeType::OutputPort);
+  node.properties["interface_kind"] = is_bi ? "inout" : (is_input ? "input" : "output");
+  node.properties["port_type"] = is_bi ? "inout" : (is_input ? "in" : "out");
 
   size_t count = 0;
   for (const auto& [nid, n] : graph_model_->nodes()) {
-    if (is_input && n.is_input_port()) count++;
-    else if (!is_input && n.is_output_port()) count++;
+    if (is_bi && n.is_bidirectional_port()) count++;
+    else if (is_input && n.is_input_port()) count++;
+    else if (!is_bi && !is_input && n.is_output_port()) count++;
   }
 
-  if (!name.empty()) {
+  if (!name.empty() && name != "in" && name != "out" && name != "inout") {
     node.name = name;
   } else {
-    node.name = is_input ? ("in_" + std::to_string(count)) : ("out_" + std::to_string(count));
+    node.name = is_bi ? ("inout_" + std::to_string(count)) : (is_input ? ("in_" + std::to_string(count)) : ("out_" + std::to_string(count)));
   }
 
   const double w = 84.0;
@@ -2375,14 +2385,34 @@ core::NodeId CanvasWidget::add_hierarchical_port(core::Vec2d pos, bool is_input,
   const std::string port_node_name = node.name;
   const core::NodeId nid = graph_model_->add_node(std::move(node));
 
-  core::Port p;
-  p.parent_node = nid;
-  p.name = port_node_name;
-  p.local_anchor = is_input ? core::Vec2d{1.0, 0.5} : core::Vec2d{0.0, 0.5};
-  p.direction = is_input ? core::PortDirection::East : core::PortDirection::West;
-  p.pin_type = is_input ? "input" : "output";
-  p.is_boundary_interface = true;
-  graph_model_->add_port(std::move(p));
+  if (is_bi) {
+    core::Port p1;
+    p1.parent_node = nid;
+    p1.name = port_node_name + "_e";
+    p1.local_anchor = {1.0, 0.5};
+    p1.direction = core::PortDirection::East;
+    p1.pin_type = "inout";
+    p1.is_boundary_interface = true;
+    graph_model_->add_port(std::move(p1));
+
+    core::Port p2;
+    p2.parent_node = nid;
+    p2.name = port_node_name + "_w";
+    p2.local_anchor = {0.0, 0.5};
+    p2.direction = core::PortDirection::West;
+    p2.pin_type = "inout";
+    p2.is_boundary_interface = true;
+    graph_model_->add_port(std::move(p2));
+  } else {
+    core::Port p;
+    p.parent_node = nid;
+    p.name = port_node_name;
+    p.local_anchor = is_input ? core::Vec2d{1.0, 0.5} : core::Vec2d{0.0, 0.5};
+    p.direction = is_input ? core::PortDirection::East : core::PortDirection::West;
+    p.pin_type = is_input ? "input" : "output";
+    p.is_boundary_interface = true;
+    graph_model_->add_port(std::move(p));
+  }
 
   refresh_spatial_index();
   sync_current_subsystem_symbol();
@@ -2390,7 +2420,7 @@ core::NodeId CanvasWidget::add_hierarchical_port(core::Vec2d pos, bool is_input,
   emit diagram_modified();
 
   emit status_message_requested(QString("Added %1 Port '%2' at (%3, %4)")
-      .arg(is_input ? "Input" : "Output")
+      .arg(is_bi ? "Bidirectional" : (is_input ? "Input" : "Output"))
       .arg(QString::fromStdString(port_node_name))
       .arg(static_cast<int>(pos.x))
       .arg(static_cast<int>(pos.y)));
@@ -3316,6 +3346,14 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
       }
     }
   } else if (interaction_state_ == InteractionState::DraggingNodes) {
+    const QPoint cur_pt = event->pos();
+    const bool is_outside_canvas = !rect().contains(cur_pt);
+    const double drag_dist = current_screen.distance_to(last_mouse_screen_);
+    const bool is_ctrl_drag = (event->modifiers() & Qt::ControlModifier) && (drag_dist > 5.0);
+    if (is_outside_canvas || is_ctrl_drag) {
+      start_canvas_drag_to_palette();
+      return;
+    }
     if (graph_model_ && !selected_nodes_.empty()) {
       core::Vec2d total_delta = current_world - interaction_start_world_;
       if (event->modifiers() & Qt::ShiftModifier) {
@@ -4166,6 +4204,126 @@ void CanvasWidget::dropEvent(QDropEvent* event) {
   }
 }
 
+void CanvasWidget::start_canvas_drag_to_palette() {
+#ifdef VECTOR_ENABLE_QT
+  if (!graph_model_ || selected_nodes_.empty()) return;
+
+  // Revert any live node displacement from DraggingNodes back to initial bounds
+  for (const auto& [nid, initial_b] : drag_initial_bounds_) {
+    if (auto* n = graph_model_->find_node(nid)) {
+      n->bounds = initial_b;
+    }
+  }
+  drag_initial_bounds_.clear();
+  interaction_state_ = InteractionState::None;
+  active_smart_guides_.clear();
+  graph_model_->update_all_edge_routes();
+  refresh_spatial_index();
+  update();
+
+  const core::NodeId nid = selected_nodes_.front();
+  const auto* node = graph_model_->find_node(nid);
+  if (!node) return;
+
+  ShapePlacementTemplate tmpl;
+  tmpl.name = node->name.empty() ? "Custom Shape" : node->name;
+  tmpl.width = node->bounds.width;
+  tmpl.height = node->bounds.height;
+  tmpl.anchor_point = node->symbol_anchor();
+  tmpl.resize_point = node->symbol_resize_point();
+
+  if (node->is_interface_port()) {
+    tmpl.category = PlacementCategory::HierarchicalPort;
+    if (node->is_bidirectional_port()) {
+      tmpl.shape_type = core::ShapeType::BidirectionalPort;
+      tmpl.port_type = "inout";
+      tmpl.is_input_port = false;
+    } else if (node->is_input_port()) {
+      tmpl.shape_type = core::ShapeType::InputPort;
+      tmpl.port_type = "in";
+      tmpl.is_input_port = true;
+    } else {
+      tmpl.shape_type = core::ShapeType::OutputPort;
+      tmpl.port_type = "out";
+      tmpl.is_input_port = false;
+    }
+  } else if (node->is_subsystem()) {
+    if (node->is_file_subsystem()) {
+      tmpl.category = PlacementCategory::SubsystemFile;
+      tmpl.file_path = node->subsystem_file();
+    } else {
+      tmpl.category = PlacementCategory::SubsystemBuiltin;
+    }
+  } else if (node->shape == core::ShapeType::CustomPolygon) {
+    tmpl.category = PlacementCategory::CustomPolygon;
+    tmpl.shape_type = core::ShapeType::CustomPolygon;
+    tmpl.custom_vertices = node->polygon_vertices;
+  } else if (node->shape == core::ShapeType::Rectangle) {
+    tmpl.category = PlacementCategory::ShapeType;
+    tmpl.shape_type = core::ShapeType::Rectangle;
+  } else if (node->shape == core::ShapeType::RoundedRect) {
+    tmpl.category = PlacementCategory::ShapeType;
+    tmpl.shape_type = core::ShapeType::RoundedRect;
+  } else if (node->shape == core::ShapeType::Ellipse) {
+    tmpl.category = PlacementCategory::ShapeType;
+    tmpl.shape_type = core::ShapeType::Ellipse;
+  } else {
+    tmpl.category = PlacementCategory::ShapeType;
+    tmpl.shape_type = node->shape;
+  }
+
+  const QByteArray item_data = serialize_placement_template(tmpl);
+  auto* mime = new QMimeData();
+  mime->setData("application/x-vector-stencil", item_data);
+  mime->setData("application/x-vector-diagram-shape", item_data);
+  mime->setText(QString::fromStdString(tmpl.name));
+
+  auto* drag = new QDrag(this);
+  drag->setMimeData(mime);
+
+  QPixmap pixmap(40, 40);
+  pixmap.fill(Qt::transparent);
+  {
+    QPainter p(&pixmap);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setPen(QPen(QColor(0x3B, 0x82, 0xF6), 2.0));
+    p.setBrush(QColor(0x3B, 0x82, 0xF6, 60));
+    if (node->is_bidirectional_port()) {
+      p.setPen(QPen(QColor(0xA8, 0x55, 0xF7), 2.0));
+      p.setBrush(QColor(0xA8, 0x55, 0xF7, 80));
+      QPolygonF poly;
+      poly << QPointF(2, 20) << QPointF(8, 6) << QPointF(32, 6)
+           << QPointF(38, 20) << QPointF(32, 34) << QPointF(8, 34);
+      p.drawPolygon(poly);
+    } else if (node->is_input_port()) {
+      p.setPen(QPen(QColor(0x10, 0xB9, 0x81), 2.0));
+      p.setBrush(QColor(0x10, 0xB9, 0x81, 80));
+      QPolygonF poly;
+      poly << QPointF(4, 6) << QPointF(30, 6) << QPointF(38, 20)
+           << QPointF(30, 34) << QPointF(4, 34);
+      p.drawPolygon(poly);
+    } else if (node->is_output_port()) {
+      p.setPen(QPen(QColor(0xF5, 0x9E, 0x0B), 2.0));
+      p.setBrush(QColor(0xF5, 0x9E, 0x0B, 80));
+      QPolygonF poly;
+      poly << QPointF(4, 6) << QPointF(30, 6) << QPointF(38, 20)
+           << QPointF(30, 34) << QPointF(4, 34) << QPointF(12, 20);
+      p.drawPolygon(poly);
+    } else if (node->shape == core::ShapeType::Ellipse) {
+      p.drawEllipse(4, 4, 32, 32);
+    } else if (node->shape == core::ShapeType::RoundedRect) {
+      p.drawRoundedRect(4, 4, 32, 32, 6, 6);
+    } else {
+      p.drawRect(4, 4, 32, 32);
+    }
+  }
+  drag->setPixmap(pixmap);
+  drag->setHotSpot(QPoint(20, 20));
+
+  drag->exec(Qt::CopyAction | Qt::MoveAction);
+#endif
+}
+
 void CanvasWidget::apply_parametric_drag(core::Node& node, HandleType handle, core::Vec2d unrot_cursor, bool symmetric) {
   const double bw = std::max(1.0, node.bounds.width);
   const double bh = std::max(1.0, node.bounds.height);
@@ -4301,6 +4459,8 @@ core::NodeId CanvasWidget::add_arrow_shape(core::Vec2d, double, double, const st
 bool CanvasWidget::insert_control_point_at_world(core::NodeId, core::Vec2d) { return false; }
 bool CanvasWidget::remove_control_point(core::NodeId, int) { return false; }
 core::NodeId CanvasWidget::add_hierarchical_port(core::Vec2d, bool, const std::string&, bool) { return 0; }
+core::NodeId CanvasWidget::add_hierarchical_port(core::Vec2d, const std::string&, const std::string&, bool) { return 0; }
+void CanvasWidget::start_canvas_drag_to_palette() {}
 void CanvasWidget::delete_selected() {}
 void CanvasWidget::select_all() {}
 void CanvasWidget::clear_selection() {}
@@ -5709,10 +5869,19 @@ void CanvasWidget::render_canvas() {
             painter.setFont(font);
             painter.setPen(node_text_color);
           }
-        } else if (node.shape == core::ShapeType::InputPort || node.shape == core::ShapeType::OutputPort) {
-          const bool is_in = (node.shape == core::ShapeType::InputPort);
+        } else if (node.shape == core::ShapeType::InputPort || node.shape == core::ShapeType::OutputPort ||
+                   node.shape == core::ShapeType::BidirectionalPort || node.is_interface_port()) {
+          const bool is_bi = node.is_bidirectional_port();
+          const bool is_in = !is_bi && node.is_input_port();
           QPolygonF badge;
-          if (is_in) {
+          if (is_bi) {
+            badge << QPointF(qr_f.left() + 8.0, qr_f.top())
+                  << QPointF(qr_f.right() - 8.0, qr_f.top())
+                  << QPointF(qr_f.right(), qr_f.center().y())
+                  << QPointF(qr_f.right() - 8.0, qr_f.bottom())
+                  << QPointF(qr_f.left() + 8.0, qr_f.bottom())
+                  << QPointF(qr_f.left(), qr_f.center().y());
+          } else if (is_in) {
             badge << QPointF(qr_f.left(), qr_f.top())
                   << QPointF(qr_f.right() - 8.0, qr_f.top())
                   << QPointF(qr_f.right(), qr_f.center().y())
@@ -5726,7 +5895,7 @@ void CanvasWidget::render_canvas() {
                   << QPointF(qr_f.left(), qr_f.bottom())
                   << QPointF(qr_f.left() + 8.0, qr_f.center().y());
           }
-          QColor bg_c = is_in ? QColor(0x10, 0xB9, 0x81) : QColor(0xF5, 0x9E, 0x0B);
+          QColor bg_c = is_bi ? QColor(0xA8, 0x55, 0xF7) : (is_in ? QColor(0x10, 0xB9, 0x81) : QColor(0xF5, 0x9E, 0x0B));
           auto it_badge_f = node.properties.find("fill_color");
           if (it_badge_f != node.properties.end()) {
             QColor parsed(QString::fromStdString(it_badge_f->second));
@@ -5738,7 +5907,9 @@ void CanvasWidget::render_canvas() {
 
           painter.setPen(Qt::white);
           const QString tag = QString::fromStdString(node.name);
-          painter.drawText(qr_f.adjusted(is_in ? 2.0 : 10.0, 0.0, is_in ? -10.0 : -2.0, 0.0), Qt::AlignCenter, tag);
+          const double left_pad = is_bi ? 8.0 : (is_in ? 2.0 : 10.0);
+          const double right_pad = is_bi ? -8.0 : (is_in ? -10.0 : -2.0);
+          painter.drawText(qr_f.adjusted(left_pad, 0.0, right_pad, 0.0), Qt::AlignCenter, tag);
         }
 
         if (is_node_rotated) {
@@ -6081,9 +6252,18 @@ void CanvasWidget::render_canvas() {
           painter.drawRect(qr_ghost);
         }
       } else if (cur_tmpl.category == PlacementCategory::HierarchicalPort) {
-        const bool is_in = cur_tmpl.is_input_port;
+        const bool is_bi = (cur_tmpl.shape_type == core::ShapeType::BidirectionalPort ||
+                            cur_tmpl.port_type == "inout" || cur_tmpl.port_type == "bidirectional");
+        const bool is_in = !is_bi && cur_tmpl.is_input_port;
         QPolygonF badge;
-        if (is_in) {
+        if (is_bi) {
+          badge << QPointF(qr_ghost.left() + 8.0, qr_ghost.top())
+                << QPointF(qr_ghost.right() - 8.0, qr_ghost.top())
+                << QPointF(qr_ghost.right(), qr_ghost.center().y())
+                << QPointF(qr_ghost.right() - 8.0, qr_ghost.bottom())
+                << QPointF(qr_ghost.left() + 8.0, qr_ghost.bottom())
+                << QPointF(qr_ghost.left(), qr_ghost.center().y());
+        } else if (is_in) {
           badge << QPointF(qr_ghost.left(), qr_ghost.top())
                 << QPointF(qr_ghost.right() - 8.0, qr_ghost.top())
                 << QPointF(qr_ghost.right(), qr_ghost.center().y())
@@ -6097,10 +6277,10 @@ void CanvasWidget::render_canvas() {
                 << QPointF(qr_ghost.left(), qr_ghost.bottom())
                 << QPointF(qr_ghost.left() + 8.0, qr_ghost.center().y());
         }
-        painter.setBrush(is_in ? QColor(0x10, 0xB9, 0x81, 70) : QColor(0xF5, 0x9E, 0x0B, 70));
+        painter.setBrush(is_bi ? QColor(0xA8, 0x55, 0xF7, 70) : (is_in ? QColor(0x10, 0xB9, 0x81, 70) : QColor(0xF5, 0x9E, 0x0B, 70)));
         painter.drawPolygon(badge);
         painter.setPen(Qt::white);
-        painter.drawText(qr_ghost, Qt::AlignCenter, QString::fromStdString(cur_tmpl.name.empty() ? (is_in ? "Input Port" : "Output Port") : cur_tmpl.name));
+        painter.drawText(qr_ghost, Qt::AlignCenter, QString::fromStdString(cur_tmpl.name.empty() ? (is_bi ? "Bidirectional Port" : (is_in ? "Input Port" : "Output Port")) : cur_tmpl.name));
         painter.setPen(ghost_pen);
       } else if (cur_tmpl.category == PlacementCategory::SubsystemBuiltin ||
                  cur_tmpl.category == PlacementCategory::SubsystemFile ||

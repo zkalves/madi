@@ -394,7 +394,9 @@ public:
   core::GraphModel* get_subsystem_graph(core::NodeId nid);
 
   // Hierarchical Diagram Port Management & Automatic Symbol Sync
+  core::NodeId add_hierarchical_port(core::Vec2d pos, const std::string& port_type, const std::string& name = {}, bool snap_pos = true);
   core::NodeId add_hierarchical_port(core::Vec2d pos, bool is_input, const std::string& name = {}, bool snap_pos = true);
+  void start_canvas_drag_to_palette();
   void sync_current_subsystem_symbol();
 
   // Vector drawing and manipulation operations
