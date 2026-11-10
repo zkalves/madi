@@ -1,0 +1,778 @@
+// VECTOR - Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing
+// Copyright (C) 2026 VECTOR Contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#ifndef VECTOR_GUI_STENCIL_LIBRARY_DOCK_HPP
+#define VECTOR_GUI_STENCIL_LIBRARY_DOCK_HPP
+
+#ifdef VECTOR_ENABLE_QT
+
+#include <QAction>
+#include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QDockWidget>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QFormLayout>
+#include <QHBoxLayout>
+#include <QHeaderView>
+#include <QLabel>
+#include <QLineEdit>
+#include <QMenu>
+#include <QMessageBox>
+#include <QPushButton>
+#include <QShortcut>
+#include <QSpinBox>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
+#include <QVBoxLayout>
+
+#include <cmath>
+#include <numbers>
+#include <vector>
+
+#include "vector/core/GraphModel.hpp"
+#include "vector/gui/IconFactory.hpp"
+#include "vector/gui/ThemeManager.hpp"
+#include "vector/renderer/CanvasWidget.hpp"
+
+namespace vector::gui {
+
+class StencilLibraryDock : public QDockWidget {
+  Q_OBJECT
+
+public:
+  enum class StencilItemType {
+    // 1. 2D Geometric Primitives (Universal Constructive CSG Basis)
+    ShapeRect,
+    ShapeRightTriangle,
+    ShapeTriangle,
+    ShapeEllipse,
+    ShapeRoundedRect,
+    ShapeDiamond,
+    ShapeParallelogram,
+    ShapeTrapezoid,
+    ShapeCross,
+    ShapeStar,
+    ShapeChevron,
+    ShapeCylinder,
+    ShapePolygonTool,
+
+    // 2. Regular N-gon Series
+    ShapePentagon,
+    ShapeHexagon,
+    ShapeHeptagon,
+    ShapeOctagon,
+    ShapeDecagon,
+    ShapeDodecagon,
+    ShapePolygonN,
+    ShapePolygon = ShapePolygonN,
+
+    // 3. Hierarchy & EDA Ports
+    ShapeInPort,
+    ShapeOutPort,
+    ShapeBiPort,
+    SubsystemBuiltin,
+    SubsystemFile,
+
+    // 4. Connectors & Routing
+    ToolConnector,
+    ToolAutoArrow,
+
+    // 5. Custom Stencils
+    CustomShape
+  };
+
+  explicit StencilLibraryDock(QWidget* parent = nullptr)
+      : QDockWidget("Shapes", parent) {
+    setObjectName("ShapesDock");
+    setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+
+    auto* container = new QWidget(this);
+    auto* layout = new QVBoxLayout(container);
+    layout->setContentsMargins(4, 4, 4, 4);
+    layout->setSpacing(4);
+
+    // Search bar (compact selector)
+    search_edit_ = new QLineEdit(container);
+    search_edit_->setPlaceholderText("🔍 Search shapes & primitives...");
+    search_edit_->setClearButtonEnabled(true);
+    search_edit_->setFixedHeight(24);
+    search_edit_->setStyleSheet("QLineEdit { padding: 2px 6px; font-size: 11px; }");
+    connect(search_edit_, &QLineEdit::textChanged, this, &StencilLibraryDock::filter_items);
+    layout->addWidget(search_edit_);
+
+    // Tree of stencils with prominent 28x28 icons for clear visibility
+    tree_ = new QTreeWidget(container);
+    tree_->setHeaderHidden(true);
+    tree_->setIndentation(12);
+    tree_->setAnimated(true);
+    tree_->setIconSize(QSize(28, 28));
+    tree_->setStyleSheet(
+        "QTreeWidget { font-size: 11px; } "
+        "QTreeWidget::item { padding: 3px 4px; min-height: 32px; } "
+        "QTreeWidget::item:selected { background-color: #0078D4; color: #FFFFFF; }");
+    tree_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(tree_, &QTreeWidget::customContextMenuRequested, this, &StencilLibraryDock::show_context_menu);
+    layout->addWidget(tree_, 1);
+
+    // Bottom Action Row: [ ➕ Add... ] [ 🗑 Remove ] [ Insert ]
+    auto* action_row = new QHBoxLayout();
+    action_row->setContentsMargins(0, 0, 0, 0);
+    action_row->setSpacing(3);
+
+    btn_add_ = new QPushButton("➕ Add...", container);
+    btn_add_->setFixedHeight(24);
+    btn_add_->setToolTip("Add a custom shape or capture from selected canvas element");
+    btn_add_->setStyleSheet("QPushButton { font-size: 11px; padding: 2px 6px; }");
+    connect(btn_add_, &QPushButton::clicked, this, &StencilLibraryDock::show_add_menu);
+    action_row->addWidget(btn_add_);
+
+    btn_remove_ = new QPushButton("🗑 Remove", container);
+    btn_remove_->setFixedHeight(24);
+    btn_remove_->setEnabled(false);
+    btn_remove_->setToolTip("Remove selected shape from palette (Delete key)");
+    btn_remove_->setStyleSheet("QPushButton { font-size: 11px; padding: 2px 6px; }");
+    connect(btn_remove_, &QPushButton::clicked, this, &StencilLibraryDock::remove_current_selected);
+    action_row->addWidget(btn_remove_);
+
+    btn_insert_ = new QPushButton("Insert", container);
+    btn_insert_->setFixedHeight(24);
+    btn_insert_->setToolTip("Insert selected shape onto canvas center");
+    btn_insert_->setStyleSheet("QPushButton { font-size: 11px; font-weight: bold; padding: 2px 8px; }");
+    connect(btn_insert_, &QPushButton::clicked, this, &StencilLibraryDock::insert_current_selected);
+    action_row->addWidget(btn_insert_);
+
+    layout->addLayout(action_row);
+
+    setWidget(container);
+
+    populate_stencils();
+
+    connect(tree_, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem* item, int col) {
+      (void)col;
+      trigger_item(item);
+    });
+
+    connect(tree_, &QTreeWidget::itemSelectionChanged, this, [this]() {
+      auto* current = tree_->currentItem();
+      const bool can_remove = (current != nullptr && current->parent() != nullptr);
+      btn_remove_->setEnabled(can_remove);
+    });
+
+    auto* del_shortcut = new QShortcut(QKeySequence::Delete, tree_);
+    connect(del_shortcut, &QShortcut::activated, this, &StencilLibraryDock::remove_current_selected);
+  }
+
+  void set_canvas(renderer::CanvasWidget* canvas) noexcept {
+    canvas_ = canvas;
+  }
+
+  [[nodiscard]] int total_shape_count() const noexcept {
+    int count = 0;
+    for (int i = 0; i < tree_->topLevelItemCount(); ++i) {
+      count += tree_->topLevelItem(i)->childCount();
+    }
+    return count;
+  }
+
+  [[nodiscard]] bool has_shape(const QString& name) const noexcept {
+    for (int i = 0; i < tree_->topLevelItemCount(); ++i) {
+      auto* cat = tree_->topLevelItem(i);
+      for (int j = 0; j < cat->childCount(); ++j) {
+        if (cat->child(j)->text(0).contains(name, Qt::CaseInsensitive)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  void update_icons(const QColor& fg) {
+    current_fg_ = fg;
+    for (int i = 0; i < tree_->topLevelItemCount(); ++i) {
+      auto* cat = tree_->topLevelItem(i);
+      for (int j = 0; j < cat->childCount(); ++j) {
+        auto* child = cat->child(j);
+        QVariant itype_var = child->data(0, Qt::UserRole + 3);
+        if (itype_var.isValid()) {
+          auto itype = static_cast<IconFactory::IconType>(itype_var.toInt());
+          child->setIcon(0, IconFactory::create_icon(itype, fg));
+        }
+      }
+    }
+  }
+
+  QTreeWidgetItem* add_shape_item(
+      const QString& name,
+      StencilItemType type,
+      int param = 0,
+      const QString& category = "⭐ Custom Shapes",
+      IconFactory::IconType itype = IconFactory::IconType::Rectangle) {
+    auto* cat = find_or_create_category(category);
+    QString title = name;
+    if (itype == IconFactory::IconType::Rectangle) {
+      switch (type) {
+        case StencilItemType::ShapeRect: itype = IconFactory::IconType::Rectangle; break;
+        case StencilItemType::ShapeRightTriangle: itype = IconFactory::IconType::RightTriangle; break;
+        case StencilItemType::ShapeTriangle: itype = IconFactory::IconType::Triangle; break;
+        case StencilItemType::ShapeRoundedRect: itype = IconFactory::IconType::RoundedRect; break;
+        case StencilItemType::ShapeEllipse: itype = IconFactory::IconType::Ellipse; break;
+        case StencilItemType::ShapeDiamond: itype = IconFactory::IconType::Diamond; break;
+        case StencilItemType::ShapePentagon: itype = IconFactory::IconType::Pentagon; break;
+        case StencilItemType::ShapeHexagon: itype = IconFactory::IconType::PolygonHex; break;
+        case StencilItemType::ShapeHeptagon: itype = IconFactory::IconType::Heptagon; break;
+        case StencilItemType::ShapeOctagon: itype = IconFactory::IconType::Octagon; break;
+        case StencilItemType::ShapeDecagon: itype = IconFactory::IconType::Decagon; break;
+        case StencilItemType::ShapeDodecagon: itype = IconFactory::IconType::Dodecagon; break;
+        case StencilItemType::ShapeCross: itype = IconFactory::IconType::Cross; break;
+        case StencilItemType::ShapeStar: itype = IconFactory::IconType::Star; break;
+        case StencilItemType::ShapeTrapezoid: itype = IconFactory::IconType::Trapezoid; break;
+        case StencilItemType::ShapeParallelogram: itype = IconFactory::IconType::Parallelogram; break;
+        case StencilItemType::ShapeChevron: itype = IconFactory::IconType::Chevron; break;
+        case StencilItemType::ShapeCylinder: itype = IconFactory::IconType::Cylinder; break;
+        case StencilItemType::ShapeInPort: itype = IconFactory::IconType::InputPort; break;
+        case StencilItemType::ShapeOutPort: itype = IconFactory::IconType::OutputPort; break;
+        case StencilItemType::ShapeBiPort: itype = IconFactory::IconType::BidirectionalPort; break;
+        case StencilItemType::SubsystemBuiltin: itype = IconFactory::IconType::SubsystemBlock; break;
+        case StencilItemType::SubsystemFile: itype = IconFactory::IconType::SubsystemFile; break;
+        default: itype = IconFactory::IconType::Rectangle; break;
+      }
+    }
+    auto* item = add_stencil_item(cat, title, type, param, itype);
+    item->setData(0, Qt::UserRole + 2, name);
+    cat->setExpanded(true);
+    tree_->setCurrentItem(item);
+    return item;
+  }
+
+  bool remove_shape(const QString& name) {
+    for (int i = 0; i < tree_->topLevelItemCount(); ++i) {
+      auto* cat = tree_->topLevelItem(i);
+      for (int j = 0; j < cat->childCount(); ++j) {
+        auto* child = cat->child(j);
+        if (child->text(0).contains(name, Qt::CaseInsensitive)) {
+          cat->removeChild(child);
+          delete child;
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  void reset_default_shapes() {
+    populate_stencils();
+  }
+
+  [[nodiscard]] QTreeWidget* tree_widget() const noexcept { return tree_; }
+  [[nodiscard]] QLineEdit* search_edit() const noexcept { return search_edit_; }
+  [[nodiscard]] QPushButton* add_button() const noexcept { return btn_add_; }
+  [[nodiscard]] QPushButton* remove_button() const noexcept { return btn_remove_; }
+  [[nodiscard]] QPushButton* insert_button() const noexcept { return btn_insert_; }
+
+public slots:
+  void insert_current_selected() {
+    auto* current = tree_->currentItem();
+    if (current && current->parent() != nullptr) {
+      trigger_item(current);
+    }
+  }
+
+  bool remove_current_selected() {
+    auto* current = tree_->currentItem();
+    if (!current) return false;
+    if (current->parent() == nullptr) {
+      while (current->childCount() > 0) {
+        delete current->takeChild(0);
+      }
+      btn_remove_->setEnabled(false);
+      return true;
+    }
+    auto* parent = current->parent();
+    parent->removeChild(current);
+    delete current;
+    btn_remove_->setEnabled(false);
+    return true;
+  }
+
+  void show_add_menu() {
+    QMenu menu(this);
+    auto* act_custom = menu.addAction("📐 Add Custom Shape / N-gon...");
+    auto* act_from_sel = menu.addAction("⭐ Add Selected from Canvas");
+    if (!canvas_ || canvas_->selected_count() == 0) {
+      act_from_sel->setEnabled(false);
+    }
+    menu.addSeparator();
+    auto* act_reset = menu.addAction("🔄 Restore Default Shapes");
+
+    QPoint popup_pos = btn_add_ ? btn_add_->mapToGlobal(QPoint(0, btn_add_->height())) : QCursor::pos();
+    QAction* chosen = menu.exec(popup_pos);
+    if (chosen == act_custom) {
+      prompt_custom_shape_dialog();
+    } else if (chosen == act_from_sel) {
+      add_from_selection();
+    } else if (chosen == act_reset) {
+      reset_default_shapes();
+    }
+  }
+
+  void prompt_custom_shape_dialog() {
+    QDialog dlg(this);
+    dlg.setWindowTitle("Add Shape to Palette");
+    auto* layout = new QVBoxLayout(&dlg);
+    layout->setSpacing(8);
+    auto* form = new QFormLayout();
+
+    auto* edit_name = new QLineEdit(&dlg);
+    edit_name->setPlaceholderText("e.g. Inverter, Chamfer Box, Motor");
+    form->addRow("Shape Name:", edit_name);
+
+    auto* combo_type = new QComboBox(&dlg);
+    combo_type->addItem("Rectangle Block", static_cast<int>(StencilItemType::ShapeRect));
+    combo_type->addItem("Right-Angled Triangle (Chamfer)", static_cast<int>(StencilItemType::ShapeRightTriangle));
+    combo_type->addItem("Isosceles Triangle", static_cast<int>(StencilItemType::ShapeTriangle));
+    combo_type->addItem("Circle & Ellipse", static_cast<int>(StencilItemType::ShapeEllipse));
+    combo_type->addItem("Rounded Rectangle", static_cast<int>(StencilItemType::ShapeRoundedRect));
+    combo_type->addItem("Diamond / Rhombus", static_cast<int>(StencilItemType::ShapeDiamond));
+    combo_type->addItem("Parallelogram (Skewed Quad)", static_cast<int>(StencilItemType::ShapeParallelogram));
+    combo_type->addItem("Trapezoid (Tapered Quad)", static_cast<int>(StencilItemType::ShapeTrapezoid));
+    combo_type->addItem("Orthogonal Cross (+)", static_cast<int>(StencilItemType::ShapeCross));
+    combo_type->addItem("5-Pointed Star", static_cast<int>(StencilItemType::ShapeStar));
+    combo_type->addItem("Arrow Block / Chevron", static_cast<int>(StencilItemType::ShapeChevron));
+    combo_type->addItem("Cylinder / Storage Drum", static_cast<int>(StencilItemType::ShapeCylinder));
+    combo_type->addItem("Regular Polygon (N-gon)", static_cast<int>(StencilItemType::ShapePolygonN));
+    combo_type->addItem("Hierarchical Input Port", static_cast<int>(StencilItemType::ShapeInPort));
+    combo_type->addItem("Hierarchical Output Port", static_cast<int>(StencilItemType::ShapeOutPort));
+    combo_type->addItem("Bidirectional Port", static_cast<int>(StencilItemType::ShapeBiPort));
+    combo_type->addItem("Built-in Subsystem", static_cast<int>(StencilItemType::SubsystemBuiltin));
+    form->addRow("Shape Type:", combo_type);
+
+    auto* spin_sides = new QSpinBox(&dlg);
+    spin_sides->setRange(3, 32);
+    spin_sides->setValue(5);
+    spin_sides->setEnabled(false);
+    form->addRow("Polygon Sides (N):", spin_sides);
+
+    connect(combo_type, QOverload<int>::of(&QComboBox::currentIndexChanged), [combo_type, spin_sides](int) {
+      auto type = static_cast<StencilItemType>(combo_type->currentData().toInt());
+      spin_sides->setEnabled(type == StencilItemType::ShapePolygonN);
+    });
+
+    layout->addLayout(form);
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    layout->addWidget(buttons);
+
+    if (dlg.exec() == QDialog::Accepted) {
+      QString name = edit_name->text().trimmed();
+      if (name.isEmpty()) name = combo_type->currentText();
+      auto type = static_cast<StencilItemType>(combo_type->currentData().toInt());
+      int sides = (type == StencilItemType::ShapePolygonN) ? spin_sides->value() : 0;
+      add_shape_item(name, type, sides, "⭐ Custom Shapes");
+    }
+  }
+
+  void add_from_selection() {
+    if (!canvas_) return;
+    const auto sel = canvas_->selected_nodes();
+    if (sel.empty()) return;
+
+    auto* graph = canvas_->graph_model();
+    if (!graph) return;
+
+    const auto* node = graph->find_node(sel.front());
+    if (!node) return;
+
+    QString name = QString::fromStdString(node->name.empty() ? "Canvas Shape" : node->name);
+    StencilItemType stype = StencilItemType::ShapeRect;
+    IconFactory::IconType itype = IconFactory::IconType::Rectangle;
+    int sides = 0;
+
+    switch (node->shape) {
+      case core::ShapeType::Rectangle:
+        stype = StencilItemType::ShapeRect;
+        itype = IconFactory::IconType::Rectangle;
+        break;
+      case core::ShapeType::RoundedRect:
+        stype = StencilItemType::ShapeRoundedRect;
+        itype = IconFactory::IconType::RoundedRect;
+        break;
+      case core::ShapeType::Ellipse:
+        stype = StencilItemType::ShapeEllipse;
+        itype = IconFactory::IconType::Ellipse;
+        break;
+      case core::ShapeType::CustomPolygon:
+        stype = StencilItemType::ShapePolygonN;
+        sides = node->polygon_vertices.empty() ? 6 : static_cast<int>(node->polygon_vertices.size());
+        if (sides == 3) itype = IconFactory::IconType::Triangle;
+        else if (sides == 4) itype = IconFactory::IconType::Diamond;
+        else if (sides == 5) itype = IconFactory::IconType::Pentagon;
+        else if (sides == 6) itype = IconFactory::IconType::PolygonHex;
+        else if (sides == 7) itype = IconFactory::IconType::Heptagon;
+        else if (sides == 8) itype = IconFactory::IconType::Octagon;
+        else if (sides == 10) itype = IconFactory::IconType::Decagon;
+        else if (sides == 12) itype = IconFactory::IconType::Dodecagon;
+        else itype = IconFactory::IconType::PolygonDraw;
+        break;
+      case core::ShapeType::InputPort:
+        stype = StencilItemType::ShapeInPort;
+        itype = IconFactory::IconType::InputPort;
+        break;
+      case core::ShapeType::OutputPort:
+        stype = StencilItemType::ShapeOutPort;
+        itype = IconFactory::IconType::OutputPort;
+        break;
+      case core::ShapeType::HierarchicalBlock:
+        stype = StencilItemType::SubsystemBuiltin;
+        itype = IconFactory::IconType::SubsystemBlock;
+        break;
+    }
+
+    add_shape_item(name + " (Copy)", stype, sides, "⭐ Custom Shapes", itype);
+  }
+
+private:
+  QTreeWidgetItem* find_or_create_category(const QString& cat_name) {
+    for (int i = 0; i < tree_->topLevelItemCount(); ++i) {
+      auto* cat = tree_->topLevelItem(i);
+      if (cat->text(0) == cat_name) return cat;
+    }
+    auto* new_cat = new QTreeWidgetItem(tree_, QStringList() << cat_name);
+    new_cat->setExpanded(true);
+    QFont bold_font = new_cat->font(0);
+    bold_font.setBold(true);
+    new_cat->setFont(0, bold_font);
+    return new_cat;
+  }
+
+  void populate_stencils() {
+    tree_->clear();
+
+    // 1. 2D Geometric Primitives (Universal Constructive Basis)
+    auto* cat_primitives = new QTreeWidgetItem(tree_, QStringList() << "📐 2D Geometric Primitives (CSG Basis)");
+    cat_primitives->setExpanded(true);
+    QFont bold_font = cat_primitives->font(0);
+    bold_font.setBold(true);
+    cat_primitives->setFont(0, bold_font);
+
+    add_stencil_item(cat_primitives, "Rectangle Block", StencilItemType::ShapeRect, 0,
+                     IconFactory::IconType::Rectangle,
+                     "Rectangle Quadrilateral (R)\nFundamental orthogonal basis for chips, blocks, and frames.");
+    add_stencil_item(cat_primitives, "Right-Angled Triangle", StencilItemType::ShapeRightTriangle, 0,
+                     IconFactory::IconType::RightTriangle,
+                     "Right Triangle (45°-90°-45°)\nFundamental basis for triangulation, slopes, chamfers, and ramps.");
+    add_stencil_item(cat_primitives, "Isosceles Triangle", StencilItemType::ShapeTriangle, 3,
+                     IconFactory::IconType::Triangle,
+                     "Equilateral/Isosceles Triangle (3-gon)\nSymmetric directional wedge basis for delta connections and ramps.");
+    add_stencil_item(cat_primitives, "State Ellipse & Circle", StencilItemType::ShapeEllipse, 0,
+                     IconFactory::IconType::Ellipse,
+                     "Circle & Ellipse (E)\nFundamental curved boundary basis for circular arcs, holes, cams, and washers.");
+    add_stencil_item(cat_primitives, "Rounded Rectangle", StencilItemType::ShapeRoundedRect, 0,
+                     IconFactory::IconType::RoundedRect,
+                     "Rounded Rectangle (Stadium/Pill)\nCurved corner box basis with smooth radius corners.");
+    add_stencil_item(cat_primitives, "Diamond / Rhombus", StencilItemType::ShapeDiamond, 4,
+                     IconFactory::IconType::Diamond,
+                     "Diamond / Rhombus (4-gon)\nRotated quadrilateral basis for decision blocks and flow branch gates.");
+    add_stencil_item(cat_primitives, "Parallelogram", StencilItemType::ShapeParallelogram, 0,
+                     IconFactory::IconType::Parallelogram,
+                     "Parallelogram\nSheared quadrilateral basis for flowchart I/O and skewed projections.");
+    add_stencil_item(cat_primitives, "Trapezoid", StencilItemType::ShapeTrapezoid, 0,
+                     IconFactory::IconType::Trapezoid,
+                     "Trapezoid\nTapered quadrilateral basis for funnels, perspective boxes, and flow pipelines.");
+    add_stencil_item(cat_primitives, "Orthogonal Cross (+)", StencilItemType::ShapeCross, 0,
+                     IconFactory::IconType::Cross,
+                     "Orthogonal Cross (+)\n12-vertex symmetric orthogonal cross for junctions, fiducials, and safety signs.");
+    add_stencil_item(cat_primitives, "5-Pointed Star", StencilItemType::ShapeStar, 5,
+                     IconFactory::IconType::Star,
+                     "Star (5-Pointed)\nConcave star polygon basis. Combine or intersect with circles and polygons.");
+    add_stencil_item(cat_primitives, "Cylinder / Storage Drum", StencilItemType::ShapeCylinder, 0,
+                     IconFactory::IconType::Cylinder,
+                     "Cylinder / Database Drum\n3D curved cylinder projection basis for databases, capacitors, and barrels.");
+    add_stencil_item(cat_primitives, "Arrow Block / Chevron", StencilItemType::ShapeChevron, 0,
+                     IconFactory::IconType::Chevron,
+                     "Arrow Block / Chevron\nDirectional block basis for pipeline stages, flow queues, and vectors.");
+    add_stencil_item(cat_primitives, "Custom Polygon Tool", StencilItemType::ShapePolygonTool, 0,
+                     IconFactory::IconType::PolygonDraw,
+                     "Custom Polygon Tool (P)\nClick points on canvas to draw ANY arbitrary polygonal shape with any number of vertices.");
+
+    // 2. Regular N-gon Series
+    auto* cat_ngon = new QTreeWidgetItem(tree_, QStringList() << "⬡ Regular Polygons (N-gon Series)");
+    cat_ngon->setExpanded(true);
+    cat_ngon->setFont(0, bold_font);
+
+    add_stencil_item(cat_ngon, "Triangle (3-gon)", StencilItemType::ShapeTriangle, 3,
+                     IconFactory::IconType::Triangle, "Regular 3-sided polygon (Equilateral Triangle)");
+    add_stencil_item(cat_ngon, "Diamond (4-gon)", StencilItemType::ShapeDiamond, 4,
+                     IconFactory::IconType::Diamond, "Regular 4-sided polygon (Square / Rhombus)");
+    add_stencil_item(cat_ngon, "Pentagon (5-gon)", StencilItemType::ShapePentagon, 5,
+                     IconFactory::IconType::Pentagon, "Regular 5-sided polygon");
+    add_stencil_item(cat_ngon, "Hexagon (6-gon)", StencilItemType::ShapeHexagon, 6,
+                     IconFactory::IconType::PolygonHex, "Regular 6-sided polygon (Honeycombs, pads)");
+    add_stencil_item(cat_ngon, "Heptagon (7-gon)", StencilItemType::ShapeHeptagon, 7,
+                     IconFactory::IconType::Heptagon, "Regular 7-sided polygon");
+    add_stencil_item(cat_ngon, "Octagon (8-gon)", StencilItemType::ShapeOctagon, 8,
+                     IconFactory::IconType::Octagon, "Regular 8-sided polygon");
+    add_stencil_item(cat_ngon, "Decagon (10-gon)", StencilItemType::ShapeDecagon, 10,
+                     IconFactory::IconType::Decagon, "Regular 10-sided polygon");
+    add_stencil_item(cat_ngon, "Dodecagon (12-gon)", StencilItemType::ShapeDodecagon, 12,
+                     IconFactory::IconType::Dodecagon, "Regular 12-sided polygon");
+
+    // 3. Hierarchy & Ports Category
+    auto* cat_ports = new QTreeWidgetItem(tree_, QStringList() << "⚙ Hierarchy & EDA Ports");
+    cat_ports->setExpanded(true);
+    cat_ports->setFont(0, bold_font);
+
+    add_stencil_item(cat_ports, "Hierarchical Input Port", StencilItemType::ShapeInPort, 0,
+                     IconFactory::IconType::InputPort, "Hierarchical input signal boundary port (I)");
+    add_stencil_item(cat_ports, "Hierarchical Output Port", StencilItemType::ShapeOutPort, 0,
+                     IconFactory::IconType::OutputPort, "Hierarchical output signal boundary port (O)");
+    add_stencil_item(cat_ports, "Bidirectional Port", StencilItemType::ShapeBiPort, 0,
+                     IconFactory::IconType::BidirectionalPort, "Bidirectional I/O interface port");
+    add_stencil_item(cat_ports, "Built-in Subsystem (Embedded)", StencilItemType::SubsystemBuiltin, 0,
+                     IconFactory::IconType::SubsystemBlock, "Hierarchical subsystem block embedded in current diagram (H)");
+    add_stencil_item(cat_ports, "External File Subsystem (.yaml)", StencilItemType::SubsystemFile, 0,
+                     IconFactory::IconType::SubsystemFile, "Hierarchical subsystem linked to an external file");
+
+    // 4. Connectors & Routing Category
+    auto* cat_wiring = new QTreeWidgetItem(tree_, QStringList() << "⚡ Connectors & Routing");
+    cat_wiring->setExpanded(true);
+    cat_wiring->setFont(0, bold_font);
+
+    add_stencil_item(cat_wiring, "Orthogonal Net Connector", StencilItemType::ToolConnector, 0,
+                     IconFactory::IconType::Wire, "Orthogonal obstacle-avoiding net wire (C)");
+    add_stencil_item(cat_wiring, "Auto-Routing Arrow", StencilItemType::ToolAutoArrow, 0,
+                     IconFactory::IconType::Wire, "2-click auto-routing arrow with multipoint branching");
+  }
+
+  QTreeWidgetItem* add_stencil_item(
+      QTreeWidgetItem* parent,
+      const QString& title,
+      StencilItemType type,
+      int param,
+      IconFactory::IconType itype,
+      const QString& tooltip = QString()) {
+    auto* item = new QTreeWidgetItem(parent, QStringList() << title);
+    item->setData(0, Qt::UserRole, static_cast<int>(type));
+    item->setData(0, Qt::UserRole + 1, param);
+    item->setData(0, Qt::UserRole + 3, static_cast<int>(itype));
+    item->setIcon(0, IconFactory::create_icon(itype, current_fg_));
+    if (!tooltip.isEmpty()) {
+      item->setToolTip(0, tooltip);
+    }
+    return item;
+  }
+
+  void trigger_item(QTreeWidgetItem* item) {
+    if (!canvas_ || !item) return;
+    QVariant val = item->data(0, Qt::UserRole);
+    if (!val.isValid()) return;
+
+    auto type = static_cast<StencilItemType>(val.toInt());
+    int param = item->data(0, Qt::UserRole + 1).toInt();
+    const core::Vec2d center = canvas_->visible_world_frustum().center();
+
+    switch (type) {
+      case StencilItemType::ShapeRect:
+        canvas_->set_tool_mode(renderer::ToolMode::AddRectangle);
+        break;
+      case StencilItemType::ShapeRoundedRect:
+        canvas_->set_tool_mode(renderer::ToolMode::AddRoundedRect);
+        break;
+      case StencilItemType::ShapeEllipse:
+        canvas_->set_tool_mode(renderer::ToolMode::AddEllipse);
+        break;
+      case StencilItemType::ShapeRightTriangle:
+        canvas_->add_custom_polygon_shape(center, {
+          {0.0, 0.0}, {1.0, 1.0}, {0.0, 1.0}
+        }, "Right Triangle", 120.0, 100.0);
+        canvas_->set_tool_mode(renderer::ToolMode::Select);
+        break;
+      case StencilItemType::ShapeTriangle:
+        canvas_->add_polygon(center, 3, "Triangle");
+        canvas_->set_tool_mode(renderer::ToolMode::Select);
+        break;
+      case StencilItemType::ShapeDiamond:
+        canvas_->add_polygon(center, 4, "Diamond");
+        canvas_->set_tool_mode(renderer::ToolMode::Select);
+        break;
+      case StencilItemType::ShapePentagon:
+        canvas_->add_polygon(center, 5, "Pentagon");
+        canvas_->set_tool_mode(renderer::ToolMode::Select);
+        break;
+      case StencilItemType::ShapeHexagon:
+        canvas_->add_polygon(center, 6, "Hexagon");
+        canvas_->set_tool_mode(renderer::ToolMode::Select);
+        break;
+      case StencilItemType::ShapeHeptagon:
+        canvas_->add_polygon(center, 7, "Heptagon");
+        canvas_->set_tool_mode(renderer::ToolMode::Select);
+        break;
+      case StencilItemType::ShapeOctagon:
+        canvas_->add_polygon(center, 8, "Octagon");
+        canvas_->set_tool_mode(renderer::ToolMode::Select);
+        break;
+      case StencilItemType::ShapeDecagon:
+        canvas_->add_polygon(center, 10, "Decagon");
+        canvas_->set_tool_mode(renderer::ToolMode::Select);
+        break;
+      case StencilItemType::ShapeDodecagon:
+        canvas_->add_polygon(center, 12, "Dodecagon");
+        canvas_->set_tool_mode(renderer::ToolMode::Select);
+        break;
+      case StencilItemType::ShapePolygonN:
+        canvas_->add_polygon(center, param > 2 ? param : 5, QString("Polygon %1-gon").arg(param).toStdString());
+        canvas_->set_tool_mode(renderer::ToolMode::Select);
+        break;
+      case StencilItemType::ShapeParallelogram:
+        canvas_->add_custom_polygon_shape(center, {
+          {0.25, 0.0}, {1.0, 0.0}, {0.75, 1.0}, {0.0, 1.0}
+        }, "Parallelogram", 130.0, 80.0);
+        canvas_->set_tool_mode(renderer::ToolMode::Select);
+        break;
+      case StencilItemType::ShapeTrapezoid:
+        canvas_->add_custom_polygon_shape(center, {
+          {0.2, 0.0}, {0.8, 0.0}, {1.0, 1.0}, {0.0, 1.0}
+        }, "Trapezoid", 130.0, 80.0);
+        canvas_->set_tool_mode(renderer::ToolMode::Select);
+        break;
+      case StencilItemType::ShapeCross:
+        canvas_->add_custom_polygon_shape(center, {
+          {0.35, 0.0}, {0.65, 0.0}, {0.65, 0.35},
+          {1.0, 0.35}, {1.0, 0.65}, {0.65, 0.65},
+          {0.65, 1.0}, {0.35, 1.0}, {0.35, 0.65},
+          {0.0, 0.65}, {0.0, 0.35}, {0.35, 0.35}
+        }, "Cross", 100.0, 100.0);
+        canvas_->set_tool_mode(renderer::ToolMode::Select);
+        break;
+      case StencilItemType::ShapeStar: {
+        std::vector<core::Vec2d> star_pts;
+        star_pts.reserve(10);
+        for (int i = 0; i < 10; ++i) {
+          const double r = (i % 2 == 0) ? 0.5 : 0.22;
+          const double rad = -std::numbers::pi / 2.0 + (std::numbers::pi * i) / 5.0;
+          star_pts.push_back({0.5 + r * std::cos(rad), 0.5 + r * std::sin(rad)});
+        }
+        canvas_->add_custom_polygon_shape(center, star_pts, "Star", 110.0, 110.0);
+        canvas_->set_tool_mode(renderer::ToolMode::Select);
+        break;
+      }
+      case StencilItemType::ShapeChevron:
+        canvas_->add_custom_polygon_shape(center, {
+          {0.0, 0.2}, {0.6, 0.2}, {0.6, 0.0},
+          {1.0, 0.5}, {0.6, 1.0}, {0.6, 0.8}, {0.0, 0.8}
+        }, "Arrow Block", 130.0, 80.0);
+        canvas_->set_tool_mode(renderer::ToolMode::Select);
+        break;
+      case StencilItemType::ShapeCylinder: {
+        std::vector<core::Vec2d> cyl_pts;
+        cyl_pts.push_back({0.0, 0.2});
+        for (int i = 0; i <= 8; ++i) {
+          const double rad = std::numbers::pi - (std::numbers::pi * i) / 8.0;
+          cyl_pts.push_back({0.5 + 0.5 * std::cos(rad), 0.2 - 0.15 * std::sin(rad)});
+        }
+        cyl_pts.push_back({1.0, 0.8});
+        for (int i = 0; i <= 8; ++i) {
+          const double rad = -(std::numbers::pi * i) / 8.0;
+          cyl_pts.push_back({0.5 + 0.5 * std::cos(rad), 0.8 - 0.15 * std::sin(rad)});
+        }
+        canvas_->add_custom_polygon_shape(center, cyl_pts, "Cylinder", 100.0, 120.0);
+        canvas_->set_tool_mode(renderer::ToolMode::Select);
+        break;
+      }
+      case StencilItemType::ShapePolygonTool:
+        canvas_->set_tool_mode(renderer::ToolMode::AddPolygon);
+        break;
+      case StencilItemType::ShapeInPort:
+        canvas_->add_hierarchical_port(center, true);
+        canvas_->set_tool_mode(renderer::ToolMode::Select);
+        break;
+      case StencilItemType::ShapeOutPort:
+        canvas_->add_hierarchical_port(center, false);
+        canvas_->set_tool_mode(renderer::ToolMode::Select);
+        break;
+      case StencilItemType::ShapeBiPort:
+        canvas_->add_hierarchical_port(center, true, "inout");
+        canvas_->set_tool_mode(renderer::ToolMode::Select);
+        break;
+      case StencilItemType::SubsystemBuiltin:
+        canvas_->set_tool_mode(renderer::ToolMode::AddHierarchicalBlock);
+        break;
+      case StencilItemType::SubsystemFile: {
+        const QString fpath = QFileDialog::getOpenFileName(
+            this, "Select or Create Subsystem File", "",
+            "Supported Formats (*.yaml *.drawio *.xml);;All Files (*)");
+        if (!fpath.isEmpty()) {
+          QFileInfo fi(fpath);
+          canvas_->add_subsystem(center, fi.baseName().toStdString(), true, fpath.toStdString());
+        }
+        canvas_->set_tool_mode(renderer::ToolMode::Select);
+        break;
+      }
+      case StencilItemType::ToolConnector:
+      case StencilItemType::ToolAutoArrow:
+        canvas_->set_tool_mode(renderer::ToolMode::AddConnector);
+        break;
+      case StencilItemType::CustomShape: {
+        QString custom_name = item->data(0, Qt::UserRole + 2).toString();
+        if (param > 2) {
+          canvas_->add_polygon(center, param, custom_name.toStdString());
+        } else {
+          canvas_->add_shape(core::ShapeType::Rectangle, center, custom_name.toStdString());
+        }
+        canvas_->set_tool_mode(renderer::ToolMode::Select);
+        break;
+      }
+    }
+  }
+
+  void filter_items(const QString& filter_text) {
+    const QString text = filter_text.trimmed();
+    for (int i = 0; i < tree_->topLevelItemCount(); ++i) {
+      auto* cat = tree_->topLevelItem(i);
+      bool cat_visible = false;
+      for (int j = 0; j < cat->childCount(); ++j) {
+        auto* child = cat->child(j);
+        const bool match = text.isEmpty() || child->text(0).contains(text, Qt::CaseInsensitive);
+        child->setHidden(!match);
+        if (match) cat_visible = true;
+      }
+      cat->setHidden(!cat_visible);
+      if (!text.isEmpty() && cat_visible) cat->setExpanded(true);
+    }
+  }
+
+  void show_context_menu(const QPoint& pt) {
+    auto* item = tree_->itemAt(pt);
+    QMenu menu(this);
+    if (item && item->parent() != nullptr) {
+      menu.addAction("➕ Insert onto Canvas", this, [this, item]() { trigger_item(item); });
+      menu.addAction("🗑 Remove Shape", this, &StencilLibraryDock::remove_current_selected);
+      menu.addSeparator();
+    }
+    menu.addAction("📐 Add Custom Shape / N-gon...", this, &StencilLibraryDock::prompt_custom_shape_dialog);
+    auto* act_sel = menu.addAction("⭐ Add Selected from Canvas", this, &StencilLibraryDock::add_from_selection);
+    if (!canvas_ || canvas_->selected_count() == 0) {
+      act_sel->setEnabled(false);
+    }
+    menu.addSeparator();
+    menu.addAction("🔄 Restore Default Shapes", this, &StencilLibraryDock::reset_default_shapes);
+    menu.exec(tree_->mapToGlobal(pt));
+  }
+
+  QLineEdit* search_edit_{nullptr};
+  QTreeWidget* tree_{nullptr};
+  QPushButton* btn_add_{nullptr};
+  QPushButton* btn_remove_{nullptr};
+  QPushButton* btn_insert_{nullptr};
+  renderer::CanvasWidget* canvas_{nullptr};
+  QColor current_fg_{QColor("#CDD6F4")};
+};
+
+} // namespace vector::gui
+
+#endif // VECTOR_ENABLE_QT
+#endif // VECTOR_GUI_STENCIL_LIBRARY_DOCK_HPP

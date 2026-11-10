@@ -1,0 +1,39 @@
+# Build directories
+build/
+bin/
+lib/
+*.o
+*.a
+*.so
+*.dylib
+
+# CMake artifacts
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+*.cmake
+!cmake/*.cmake
+compile_commands.json
+
+# Qt and MOC artifacts
+*.moc
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
+*.qmlc
+*.jsc
+
+# Editor and OS
+.vscode/
+.idea/
+*.swp
+*.DS_Store
+
+# Agent metadata and generation scripts (Do not commit)
+.agent
+.agents/
+orchestrate_agents.sh
+prompt.txt
+bootstrap.sh
+scratch_test.txt
+routing-engine.md

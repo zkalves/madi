@@ -1,0 +1,28 @@
+{
+  "id": "monokai",
+  "name": "Monokai",
+  "type": "diagram",
+  "colors": {
+    "canvas_bg": "#191a16",
+    "page_bg": "#272822",
+    "page_border": "#49483e",
+    "grid_minor": "#3e3d32",
+    "grid_major": "#49483e",
+    "ruler_bg": "#1e1f1c",
+    "ruler_fg": "#75715e",
+    "ruler_border": "#49483e",
+    "node_fill": "#3e3d32",
+    "node_stroke": "#66d9ef",
+    "node_stroke_width": 1.5,
+    "node_text": "#f8f8f2",
+    "wire_color": "#a6e22e",
+    "wire_width": 1.5,
+    "selection_color": "#40f92672",
+    "selection_border": "#f92672",
+    "guide_color": "#fd971f",
+    "jump_bridge_color": "#a6e22e",
+    "subsystem_banner": "#fd971f",
+    "port_fill": "#a6e22e",
+    "port_stroke": "#272822"
+  }
+}

@@ -1,0 +1,59 @@
+# VECTOR Diagram Model - Deterministic YAML Format
+# Example: Hierarchical Controller with Subsystem Scopes
+schema_version: 1
+nodes:
+  - id: 1
+    name: "Sensor Input Matrix"
+    shape: 0
+    bounds: [80.0000, 120.0000, 150.0000, 80.0000]
+    ports:
+      - id: 11
+        name: "DataOut"
+        side: 1
+        offset_pct: 0.5000
+  - id: 2
+    name: "DSP Subsystem Core"
+    shape: 3
+    bounds: [320.0000, 100.0000, 200.0000, 120.0000]
+    properties:
+      subsystem_type: "builtin"
+      embedded_graph_yaml: "# VECTOR Subsystem Internal Diagram\nschema_version: 1\nnodes:\n  - id: 10\n    name: \"FIR Filter Bank\"\n    shape: 0\n    bounds: [100.0, 80.0, 140.0, 70.0]\n  - id: 20\n    name: \"FFT Accelerator\"\n    shape: 0\n    bounds: [320.0, 80.0, 140.0, 70.0]\nedges:\n  - id: 101\n    source_node: 10\n    target_node: 20\n    arrowhead: \"classic\"\n    waypoints:\n      - [240.0, 115.0]\n      - [320.0, 115.0]\n"
+    ports:
+      - id: 21
+        name: "RawIn"
+        side: 3
+        offset_pct: 0.5000
+      - id: 22
+        name: "ProcessedOut"
+        side: 1
+        offset_pct: 0.5000
+  - id: 3
+    name: "Actuator Output Driver"
+    shape: 0
+    bounds: [600.0000, 120.0000, 150.0000, 80.0000]
+    ports:
+      - id: 31
+        name: "CmdIn"
+        side: 3
+        offset_pct: 0.5000
+edges:
+  - id: 2001
+    name: "Net_Sensor_DSP"
+    source_node: 1
+    source_port: 11
+    target_node: 2
+    target_port: 21
+    arrowhead: "classic"
+    waypoints:
+      - [230.0000, 160.0000]
+      - [320.0000, 160.0000]
+  - id: 2002
+    name: "Net_DSP_Actuator"
+    source_node: 2
+    source_port: 22
+    target_node: 3
+    target_port: 31
+    arrowhead: "classic"
+    waypoints:
+      - [520.0000, 160.0000]
+      - [600.0000, 160.0000]

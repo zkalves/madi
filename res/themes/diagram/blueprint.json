@@ -1,0 +1,28 @@
+{
+  "id": "blueprint",
+  "name": "Architectural Blueprint",
+  "type": "diagram",
+  "colors": {
+    "canvas_bg": "#0a192f",
+    "page_bg": "#0f2b48",
+    "page_border": "#3b82f6",
+    "grid_minor": "#173a60",
+    "grid_major": "#255385",
+    "ruler_bg": "#0a192f",
+    "ruler_fg": "#93c5fd",
+    "ruler_border": "#255385",
+    "node_fill": "#173a60",
+    "node_stroke": "#e0f2fe",
+    "node_stroke_width": 1.5,
+    "node_text": "#ffffff",
+    "wire_color": "#ffffff",
+    "wire_width": 1.5,
+    "selection_color": "#40facc15",
+    "selection_border": "#facc15",
+    "guide_color": "#38bdf8",
+    "jump_bridge_color": "#e0f2fe",
+    "subsystem_banner": "#1d4ed8",
+    "port_fill": "#38bdf8",
+    "port_stroke": "#ffffff"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "dark",
+  "name": "Modern Dark",
+  "type": "diagram",
+  "colors": {
+    "canvas_bg": "#11111b",
+    "page_bg": "#181825",
+    "page_border": "#45475a",
+    "grid_minor": "#232336",
+    "grid_major": "#313244",
+    "ruler_bg": "#181825",
+    "ruler_fg": "#a6adc8",
+    "ruler_border": "#313244",
+    "node_fill": "#252538",
+    "node_stroke": "#89b4fa",
+    "node_stroke_width": 1.5,
+    "node_text": "#cdd6f4",
+    "wire_color": "#89dceb",
+    "wire_width": 1.5,
+    "selection_color": "#4089b4fa",
+    "selection_border": "#f5c2e7",
+    "guide_color": "#89dceb",
+    "jump_bridge_color": "#89b4fa",
+    "subsystem_banner": "#89b4fa",
+    "port_fill": "#89b4fa",
+    "port_stroke": "#181825"
+  }
+}

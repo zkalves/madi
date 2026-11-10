@@ -1,0 +1,85 @@
+# VECTOR Diagram Model - Deterministic YAML Format
+# Example: Multi-tier Network Architecture with Orthogonal Routing
+schema_version: 1
+nodes:
+  - id: 1
+    name: "Edge Gateway Router"
+    shape: 0
+    bounds: [60.0000, 160.0000, 140.0000, 80.0000]
+    ports:
+      - id: 101
+        name: "WAN"
+        side: 3
+        offset_pct: 0.5000
+      - id: 102
+        name: "LAN"
+        side: 1
+        offset_pct: 0.5000
+  - id: 2
+    name: "Core Switch Cluster"
+    shape: 0
+    bounds: [300.0000, 160.0000, 140.0000, 80.0000]
+    ports:
+      - id: 201
+        name: "Uplink"
+        side: 3
+        offset_pct: 0.5000
+      - id: 202
+        name: "Compute"
+        side: 0
+        offset_pct: 0.5000
+      - id: 203
+        name: "Storage"
+        side: 2
+        offset_pct: 0.5000
+  - id: 3
+    name: "Compute Node (App Server)"
+    shape: 0
+    bounds: [540.0000, 60.0000, 160.0000, 80.0000]
+    ports:
+      - id: 301
+        name: "Eth0"
+        side: 3
+        offset_pct: 0.5000
+  - id: 4
+    name: "Storage Node (SAN Array)"
+    shape: 0
+    bounds: [540.0000, 260.0000, 160.0000, 80.0000]
+    ports:
+      - id: 401
+        name: "SAN0"
+        side: 3
+        offset_pct: 0.5000
+edges:
+  - id: 1001
+    name: "Net_WAN_LAN"
+    source_node: 1
+    source_port: 102
+    target_node: 2
+    target_port: 201
+    arrowhead: "classic"
+    waypoints:
+      - [200.0000, 200.0000]
+      - [300.0000, 200.0000]
+  - id: 1002
+    name: "Net_Core_Compute"
+    source_node: 2
+    source_port: 202
+    target_node: 3
+    target_port: 301
+    arrowhead: "classic"
+    waypoints:
+      - [370.0000, 160.0000]
+      - [370.0000, 100.0000]
+      - [540.0000, 100.0000]
+  - id: 1003
+    name: "Net_Core_Storage"
+    source_node: 2
+    source_port: 203
+    target_node: 4
+    target_port: 401
+    arrowhead: "classic"
+    waypoints:
+      - [370.0000, 240.0000]
+      - [370.0000, 300.0000]
+      - [540.0000, 300.0000]

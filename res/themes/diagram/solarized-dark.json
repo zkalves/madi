@@ -1,0 +1,28 @@
+{
+  "id": "solarized-dark",
+  "name": "Solarized Dark",
+  "type": "diagram",
+  "colors": {
+    "canvas_bg": "#00212b",
+    "page_bg": "#002b36",
+    "page_border": "#586e75",
+    "grid_minor": "#073642",
+    "grid_major": "#586e75",
+    "ruler_bg": "#002b36",
+    "ruler_fg": "#839496",
+    "ruler_border": "#073642",
+    "node_fill": "#073642",
+    "node_stroke": "#268bd2",
+    "node_stroke_width": 1.5,
+    "node_text": "#93a1a1",
+    "wire_color": "#2aa198",
+    "wire_width": 1.5,
+    "selection_color": "#40268bd2",
+    "selection_border": "#268bd2",
+    "guide_color": "#2aa198",
+    "jump_bridge_color": "#268bd2",
+    "subsystem_banner": "#002b36",
+    "port_fill": "#268bd2",
+    "port_stroke": "#073642"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "light",
+  "name": "Clean Light",
+  "type": "diagram",
+  "colors": {
+    "canvas_bg": "#eaedf1",
+    "page_bg": "#ffffff",
+    "page_border": "#cbd5e1",
+    "grid_minor": "#e2e8f0",
+    "grid_major": "#cbd5e1",
+    "ruler_bg": "#f8f9fa",
+    "ruler_fg": "#718096",
+    "ruler_border": "#cbd5e1",
+    "node_fill": "#ffffff",
+    "node_stroke": "#2d3748",
+    "node_stroke_width": 1.5,
+    "node_text": "#1a202c",
+    "wire_color": "#2b6cb0",
+    "wire_width": 1.5,
+    "selection_color": "#403182ce",
+    "selection_border": "#3182ce",
+    "guide_color": "#00bcd4",
+    "jump_bridge_color": "#2b6cb0",
+    "subsystem_banner": "#3182ce",
+    "port_fill": "#0078d4",
+    "port_stroke": "#ffffff"
+  }
+}

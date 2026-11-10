@@ -1,0 +1,22 @@
+<RCC>
+    <qresource prefix="/">
+        <file>icons/vector.svg</file>
+        <file>themes/diagram/blueprint.json</file>
+        <file>themes/diagram/dark.json</file>
+        <file>themes/diagram/dracula.json</file>
+        <file>themes/diagram/high-contrast-dark.json</file>
+        <file>themes/diagram/light.json</file>
+        <file>themes/diagram/monokai.json</file>
+        <file>themes/diagram/nord.json</file>
+        <file>themes/diagram/solarized-dark.json</file>
+        <file>themes/diagram/solarized-light.json</file>
+        <file>themes/ui/dark.json</file>
+        <file>themes/ui/dracula.json</file>
+        <file>themes/ui/high-contrast-dark.json</file>
+        <file>themes/ui/light.json</file>
+        <file>themes/ui/monokai.json</file>
+        <file>themes/ui/nord.json</file>
+        <file>themes/ui/solarized-dark.json</file>
+        <file>themes/ui/solarized-light.json</file>
+    </qresource>
+</RCC>

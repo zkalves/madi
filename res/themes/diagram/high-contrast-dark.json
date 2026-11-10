@@ -1,0 +1,28 @@
+{
+  "id": "high-contrast-dark",
+  "name": "High Contrast Dark",
+  "type": "diagram",
+  "colors": {
+    "canvas_bg": "#000000",
+    "page_bg": "#050505",
+    "page_border": "#ffffff",
+    "grid_minor": "#222222",
+    "grid_major": "#555555",
+    "ruler_bg": "#000000",
+    "ruler_fg": "#ffffff",
+    "ruler_border": "#ffffff",
+    "node_fill": "#111111",
+    "node_stroke": "#00ffff",
+    "node_stroke_width": 2.0,
+    "node_text": "#ffffff",
+    "wire_color": "#ffff00",
+    "wire_width": 2.0,
+    "selection_color": "#40ff00ff",
+    "selection_border": "#ff00ff",
+    "guide_color": "#00ff00",
+    "jump_bridge_color": "#ffff00",
+    "subsystem_banner": "#00ffff",
+    "port_fill": "#00ffff",
+    "port_stroke": "#000000"
+  }
+}

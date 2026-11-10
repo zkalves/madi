@@ -1,0 +1,28 @@
+{
+  "id": "nord",
+  "name": "Nord",
+  "type": "diagram",
+  "colors": {
+    "canvas_bg": "#242933",
+    "page_bg": "#2e3440",
+    "page_border": "#4c566a",
+    "grid_minor": "#3b4252",
+    "grid_major": "#434c5e",
+    "ruler_bg": "#2e3440",
+    "ruler_fg": "#d8dee9",
+    "ruler_border": "#434c5e",
+    "node_fill": "#3b4252",
+    "node_stroke": "#88c0d0",
+    "node_stroke_width": 1.5,
+    "node_text": "#eceff4",
+    "wire_color": "#81a1c1",
+    "wire_width": 1.5,
+    "selection_color": "#4088c0d0",
+    "selection_border": "#88c0d0",
+    "guide_color": "#88c0d0",
+    "jump_bridge_color": "#81a1c1",
+    "subsystem_banner": "#5e81ac",
+    "port_fill": "#88c0d0",
+    "port_stroke": "#2e3440"
+  }
+}

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.vector.editor</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>VECTOR</name>
+  <summary>Viewport Engine for Concurrent Topology &amp; Obstacle-avoiding Routing</summary>
+  <description>
+    <p>
+      VECTOR is a professional schematic and technical diagram drawing engine featuring
+      real-time orthogonal obstacle-avoiding routing, hierarchical sub-diagrams,
+      angle snapping, interactive canvas manipulators, multi-point arrows, and rich shape stencils.
+    </p>
+    <ul>
+      <li>Autonomous orthogonal Manhattan routing with dynamic bridge crossings</li>
+      <li>Hierarchical multi-level schematics with drill-down and symbol generation</li>
+      <li>Comprehensive shape stencil library with Boolean geometry operations</li>
+      <li>Customizable themes with high-contrast, dark, and light modes</li>
+      <li>Bidirectional Draw.io XML and YAML serialization</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">vector.desktop</launchable>
+  <url type="homepage">https://github.com/vector/vector</url>
+  <provides>
+    <binary>vector-gui</binary>
+    <binary>vector-cli</binary>
+  </provides>
+</component>

@@ -1,0 +1,28 @@
+{
+  "id": "solarized-light",
+  "name": "Solarized Light",
+  "type": "diagram",
+  "colors": {
+    "canvas_bg": "#e0d8c3",
+    "page_bg": "#fdf6e3",
+    "page_border": "#93a1a1",
+    "grid_minor": "#eee8d5",
+    "grid_major": "#93a1a1",
+    "ruler_bg": "#eee8d5",
+    "ruler_fg": "#657b83",
+    "ruler_border": "#93a1a1",
+    "node_fill": "#eee8d5",
+    "node_stroke": "#268bd2",
+    "node_stroke_width": 1.5,
+    "node_text": "#586e75",
+    "wire_color": "#2aa198",
+    "wire_width": 1.5,
+    "selection_color": "#40268bd2",
+    "selection_border": "#268bd2",
+    "guide_color": "#2aa198",
+    "jump_bridge_color": "#268bd2",
+    "subsystem_banner": "#268bd2",
+    "port_fill": "#268bd2",
+    "port_stroke": "#eee8d5"
+  }
+}

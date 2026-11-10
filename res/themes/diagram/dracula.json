@@ -1,0 +1,28 @@
+{
+  "id": "dracula",
+  "name": "Dracula",
+  "type": "diagram",
+  "colors": {
+    "canvas_bg": "#191a21",
+    "page_bg": "#282a36",
+    "page_border": "#44475a",
+    "grid_minor": "#343746",
+    "grid_major": "#44475a",
+    "ruler_bg": "#21222c",
+    "ruler_fg": "#6272a4",
+    "ruler_border": "#44475a",
+    "node_fill": "#343746",
+    "node_stroke": "#bd93f9",
+    "node_stroke_width": 1.5,
+    "node_text": "#f8f8f2",
+    "wire_color": "#50fa7b",
+    "wire_width": 1.5,
+    "selection_color": "#40ff79c6",
+    "selection_border": "#ff79c6",
+    "guide_color": "#8be9fd",
+    "jump_bridge_color": "#50fa7b",
+    "subsystem_banner": "#bd93f9",
+    "port_fill": "#bd93f9",
+    "port_stroke": "#282a36"
+  }
+}
