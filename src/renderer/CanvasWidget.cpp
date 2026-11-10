@@ -485,6 +485,73 @@ core::NodeId CanvasWidget::add_custom_polygon_shape(
   return nid;
 }
 
+bool CanvasWidget::insert_control_point_at_world(core::NodeId node_id, core::Vec2d world_pt) {
+  if (!graph_model_) return false;
+  auto* node = graph_model_->find_node(node_id);
+  if (!node) return false;
+
+  const auto old_verts = node->polygon_vertices;
+  const auto old_props = node->properties;
+
+  const int new_idx = core::insert_polygon_vertex_at_world(*node, world_pt);
+  if (new_idx < 0) return false;
+
+  const auto new_verts = node->polygon_vertices;
+  const auto new_props = node->properties;
+
+  if (command_history_) {
+    command_history_->execute(std::make_unique<core::ModifyShapeGeometryCommand>(
+        *graph_model_, node_id, old_verts, new_verts, old_props, new_props, "Add Control Point"));
+  }
+
+  selected_control_point_node_ = node_id;
+  selected_control_point_index_ = new_idx;
+  active_handle_ = make_parametric_point_handle(new_idx);
+  active_handle_node_ = node_id;
+
+  if (spatial_index_) {
+    spatial_index_->update(node_id, node->bounds);
+  }
+  emit diagram_modified();
+  emit status_message_requested(QString("Added control point %1 to %2")
+      .arg(new_idx + 1)
+      .arg(QString::fromStdString(node->name)));
+  update();
+  return true;
+}
+
+bool CanvasWidget::remove_control_point(core::NodeId node_id, int point_index) {
+  if (!graph_model_) return false;
+  auto* node = graph_model_->find_node(node_id);
+  if (!node) return false;
+
+  const auto old_verts = node->polygon_vertices;
+  const auto old_props = node->properties;
+
+  if (!core::remove_polygon_vertex(*node, point_index)) return false;
+
+  const auto new_verts = node->polygon_vertices;
+  const auto new_props = node->properties;
+
+  if (command_history_) {
+    command_history_->execute(std::make_unique<core::ModifyShapeGeometryCommand>(
+        *graph_model_, node_id, old_verts, new_verts, old_props, new_props, "Remove Control Point"));
+  }
+
+  selected_control_point_index_ = -1;
+  selected_control_point_node_ = core::InvalidNodeId;
+  active_handle_ = HandleType::None;
+
+  if (spatial_index_) {
+    spatial_index_->update(node_id, node->bounds);
+  }
+  emit diagram_modified();
+  emit status_message_requested(QString("Removed control point from %1")
+      .arg(QString::fromStdString(node->name)));
+  update();
+  return true;
+}
+
 void CanvasWidget::delete_selected() {
   if (!graph_model_ || (selected_nodes_.empty() && selected_edge_ == core::InvalidEdgeId)) return;
 
@@ -2560,6 +2627,11 @@ void CanvasWidget::mouseDoubleClickEvent(QMouseEvent* event) {
         const core::NodeId clicked_node = pick_topmost_node(hits);
         if (graph_model_) {
           if (const auto* n = graph_model_->find_node(clicked_node)) {
+            if (!n->is_subsystem() && core::is_near_shape_edge(*n, click_world, 10.0 / std::max(0.1, zoom_level_))) {
+              insert_control_point_at_world(clicked_node, click_world);
+              event->accept();
+              return;
+            }
             if (n->is_subsystem()) {
               drill_down_node(clicked_node);
               return;
@@ -3361,17 +3433,6 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
       case HandleType::QuickConnectWest:
         setCursor(Qt::CrossCursor);
         break;
-      case HandleType::ParametricPoint0:
-      case HandleType::ParametricPoint1:
-      case HandleType::ParametricPoint2:
-      case HandleType::ParametricPoint3:
-      case HandleType::ParametricPoint4:
-      case HandleType::ParametricPoint5:
-      case HandleType::ParametricPoint6:
-      case HandleType::ParametricPoint7:
-        setCursor(Qt::PointingHandCursor);
-        emit status_message_requested("Parametric Control Point: Drag to reshape (Hold Alt for symmetric modification)");
-        break;
       case HandleType::ParametricLineShaftTop:
       case HandleType::ParametricLineShaftBottom:
         setCursor(Qt::SizeVerCursor);
@@ -3382,6 +3443,16 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
         emit status_message_requested("Arrow Shoulder Line: Drag to move arrowhead base & stretch attached lines");
         break;
       default:
+        if (is_parametric_point(ht)) {
+          setCursor(Qt::PointingHandCursor);
+          emit status_message_requested("Parametric Control Point: Drag to reshape (Hold Alt for symmetric modification)");
+          break;
+        }
+        if (is_parametric_line(ht)) {
+          setCursor(Qt::SizeAllCursor);
+          emit status_message_requested("Attached Shape Line: Drag to move edge segment (Hold Alt for symmetric modification)");
+          break;
+        }
         if (spatial_index_) {
           auto hits = spatial_index_->query_point(current_world);
           if (!hits.empty()) {
@@ -3620,6 +3691,11 @@ void CanvasWidget::keyPressEvent(QKeyEvent* event) {
     nudge_selected(delta);
     event->accept();
     return;
+  } else if ((event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) &&
+             selected_nodes_.size() == 1 && is_parametric_point(hovered_handle_)) {
+    remove_control_point(selected_nodes_.front(), parametric_point_index(hovered_handle_));
+    event->accept();
+    return;
   } else if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
     delete_selected();
   } else if (event->key() == Qt::Key_Escape) {
@@ -3828,6 +3904,24 @@ void CanvasWidget::contextMenuEvent(QContextMenuEvent* event) {
     if (can_split_selected()) {
       auto* act_split = menu.addAction("Split Figure");
       connect(act_split, &QAction::triggered, this, &CanvasWidget::split_selected_figure);
+    }
+
+    menu.addSeparator();
+    auto* act_add_pt = menu.addAction("Add Control Point");
+    connect(act_add_pt, &QAction::triggered, this, [this, click_world]() {
+      if (!selected_nodes_.empty()) {
+        insert_control_point_at_world(selected_nodes_.front(), click_world);
+      }
+    });
+
+    if (is_parametric_point(hovered_handle_)) {
+      const int rem_idx = parametric_point_index(hovered_handle_);
+      auto* act_rem_pt = menu.addAction("Remove Control Point");
+      connect(act_rem_pt, &QAction::triggered, this, [this, rem_idx]() {
+        if (!selected_nodes_.empty()) {
+          remove_control_point(selected_nodes_.front(), rem_idx);
+        }
+      });
     }
 
     menu.addSeparator();
@@ -4097,10 +4191,34 @@ void CanvasWidget::apply_parametric_drag(core::Node& node, HandleType handle, co
     node.polygon_vertices[10] = {0.0, arm_t};
     node.polygon_vertices[11] = {arm_t, arm_t};
     node.properties["parametric_type"] = "cross";
-  } else if (kind == core::ParametricShapeKind::GenericPolygon && !node.polygon_vertices.empty()) {
-    int idx = static_cast<int>(static_cast<uint8_t>(handle) - static_cast<uint8_t>(HandleType::ParametricPoint0));
-    if (idx >= 0 && idx < static_cast<int>(node.polygon_vertices.size())) {
-      node.polygon_vertices[idx] = {nx, ny};
+  } else if (!node.polygon_vertices.empty()) {
+    if (is_parametric_point(handle)) {
+      int idx = parametric_point_index(handle);
+      if (idx >= 0 && idx < static_cast<int>(node.polygon_vertices.size())) {
+        node.polygon_vertices[idx] = {nx, ny};
+        if (symmetric) {
+          int opp_idx = static_cast<int>((node.polygon_vertices.size() - idx) % node.polygon_vertices.size());
+          if (opp_idx != idx) {
+            node.polygon_vertices[opp_idx].x = std::clamp(1.0 - nx, 0.0, 1.0);
+            node.polygon_vertices[opp_idx].y = ny;
+          }
+        }
+      }
+    } else if (is_parametric_line(handle)) {
+      int edge_idx = parametric_line_index(handle);
+      if (edge_idx >= 0 && edge_idx < static_cast<int>(node.polygon_vertices.size())) {
+        int next_idx = static_cast<int>((edge_idx + 1) % node.polygon_vertices.size());
+        const auto pA = node.polygon_vertices[edge_idx];
+        const auto pB = node.polygon_vertices[next_idx];
+        const double mid_x = (pA.x + pB.x) * 0.5;
+        const double mid_y = (pA.y + pB.y) * 0.5;
+        const double dx = nx - mid_x;
+        const double dy = ny - mid_y;
+        node.polygon_vertices[edge_idx].x = std::clamp(pA.x + dx, 0.0, 1.0);
+        node.polygon_vertices[edge_idx].y = std::clamp(pA.y + dy, 0.0, 1.0);
+        node.polygon_vertices[next_idx].x = std::clamp(pB.x + dx, 0.0, 1.0);
+        node.polygon_vertices[next_idx].y = std::clamp(pB.y + dy, 0.0, 1.0);
+      }
     }
   }
 }
@@ -4114,6 +4232,8 @@ core::NodeId CanvasWidget::instantiate_template_at(const ShapePlacementTemplate&
 core::NodeId CanvasWidget::add_shape(core::ShapeType, core::Vec2d, const std::string&, bool) { return 0; }
 core::NodeId CanvasWidget::add_polygon(core::Vec2d, int, const std::string&, bool) { return 0; }
 core::NodeId CanvasWidget::add_custom_polygon_shape(core::Vec2d, const std::vector<core::Vec2d>&, const std::string&, double, double, bool) { return 0; }
+bool CanvasWidget::insert_control_point_at_world(core::NodeId, core::Vec2d) { return false; }
+bool CanvasWidget::remove_control_point(core::NodeId, int) { return false; }
 core::NodeId CanvasWidget::add_hierarchical_port(core::Vec2d, bool, const std::string&, bool) { return 0; }
 void CanvasWidget::delete_selected() {}
 void CanvasWidget::select_all() {}
@@ -4449,13 +4569,13 @@ HandleType CanvasWidget::hit_test_handles(core::Vec2d screen_pt, core::NodeId* o
 
   // 0. Parametric Handles (Points & Attached Lines)
   const auto p_kind = core::get_parametric_kind(*node);
-  if (p_kind != core::ParametricShapeKind::None) {
+  if (p_kind != core::ParametricShapeKind::None || !node->polygon_vertices.empty()) {
     const auto p_handles = core::get_parametric_handles(*node);
     for (const auto& ph : p_handles) {
       const double px = x0 + ph.normalized_pos.x * sw;
       const double py = y0 + ph.normalized_pos.y * sh;
       if (hit_circle(px, py, 7.5)) {
-        return static_cast<HandleType>(static_cast<uint8_t>(HandleType::ParametricPoint0) + ph.id);
+        return make_parametric_point_handle(ph.id);
       }
     }
 
@@ -4484,6 +4604,26 @@ HandleType CanvasWidget::hit_test_handles(core::Vec2d screen_pt, core::NodeId* o
       }
       if (dist_to_seg(test_pt, p5_s, p6_s) <= 5.5) {
         return HandleType::ParametricLineShaftBottom;
+      }
+    }
+
+    // Generic polygon edge line handles
+    if (!node->polygon_vertices.empty()) {
+      auto dist_to_seg = [](core::Vec2d p, core::Vec2d a, core::Vec2d b) {
+        const double l2 = a.distance_sq_to(b);
+        if (l2 < 1e-6) return p.distance_to(a);
+        const double t = std::clamp(((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2, 0.0, 1.0);
+        const core::Vec2d proj = {a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)};
+        return p.distance_to(proj);
+      };
+
+      for (size_t i = 0; i < node->polygon_vertices.size(); ++i) {
+        size_t next_i = (i + 1) % node->polygon_vertices.size();
+        const core::Vec2d pA_s = {x0 + node->polygon_vertices[i].x * sw, y0 + node->polygon_vertices[i].y * sh};
+        const core::Vec2d pB_s = {x0 + node->polygon_vertices[next_i].x * sw, y0 + node->polygon_vertices[next_i].y * sh};
+        if (dist_to_seg(test_pt, pA_s, pB_s) <= 5.5) {
+          return make_parametric_line_handle(static_cast<int>(i));
+        }
       }
     }
   }
@@ -5721,7 +5861,7 @@ void CanvasWidget::render_canvas() {
 
         // 5. Parametric shape handles (amber diamonds & line highlights)
         const auto p_kind = core::get_parametric_kind(*sel_node);
-        if (p_kind != core::ParametricShapeKind::None) {
+        if (p_kind != core::ParametricShapeKind::None || !sel_node->polygon_vertices.empty()) {
           if (p_kind == core::ParametricShapeKind::Arrow && sel_node->polygon_vertices.size() == 7) {
             const auto& pv = sel_node->polygon_vertices;
             const QPointF p0_s(x0 + pv[0].x * sw, y0 + pv[0].y * sh);
@@ -5752,12 +5892,25 @@ void CanvasWidget::render_canvas() {
             }
           }
 
+          if (is_parametric_line(hovered_handle_) ||
+              (interaction_state_ == InteractionState::DraggingParametricHandle && is_parametric_line(active_handle_))) {
+            const HandleType cur_lh = (interaction_state_ == InteractionState::DraggingParametricHandle) ? active_handle_ : hovered_handle_;
+            const int edge_i = parametric_line_index(cur_lh);
+            if (edge_i >= 0 && edge_i < static_cast<int>(sel_node->polygon_vertices.size())) {
+              const int next_i = static_cast<int>((edge_i + 1) % sel_node->polygon_vertices.size());
+              const QPointF pA(x0 + sel_node->polygon_vertices[edge_i].x * sw, y0 + sel_node->polygon_vertices[edge_i].y * sh);
+              const QPointF pB(x0 + sel_node->polygon_vertices[next_i].x * sw, y0 + sel_node->polygon_vertices[next_i].y * sh);
+              painter.setPen(QPen(QColor(0xFB, 0xBF, 0x24), 3.0, Qt::DashLine));
+              painter.drawLine(pA, pB);
+            }
+          }
+
           const auto p_handles = core::get_parametric_handles(*sel_node);
           for (const auto& ph : p_handles) {
             const double hx = x0 + ph.normalized_pos.x * sw;
             const double hy = y0 + ph.normalized_pos.y * sh;
 
-            const HandleType target_h = static_cast<HandleType>(static_cast<uint8_t>(HandleType::ParametricPoint0) + ph.id);
+            const HandleType target_h = make_parametric_point_handle(ph.id);
             const bool is_hov = (hovered_handle_ == target_h);
             const bool is_act = (interaction_state_ == InteractionState::DraggingParametricHandle && active_handle_ == target_h);
 

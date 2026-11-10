@@ -7,6 +7,7 @@
 
 #include "vector/core/Geometry.hpp"
 #include "vector/core/GraphModel.hpp"
+#include "vector/core/ParametricShape.hpp"
 #include "vector/core/SymbolGenerator.hpp"
 
 #include <QButtonGroup>
@@ -21,10 +22,12 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QTableWidget>
+#include <QTabWidget>
 #include <QVBoxLayout>
 
 namespace vector::gui {
@@ -34,15 +37,17 @@ class SymbolPreviewWidget : public QWidget {
 
 public:
   explicit SymbolPreviewWidget(QWidget* parent = nullptr) : QWidget(parent) {
-    setMinimumSize(240, 200);
+    setMinimumSize(260, 220);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    setMouseTracking(true);
   }
 
   void set_symbol_info(const QString& name, double w, double h,
                        const QColor& fill, const QColor& stroke, const QColor& banner,
                        const std::vector<std::tuple<QString, QString, QString, double>>& pins,
                        core::Vec2d anchor_pt = {0.0, 0.0},
-                       core::Vec2d resize_pt = {1.0, 1.0}) {
+                       core::Vec2d resize_pt = {1.0, 1.0},
+                       const std::vector<core::Vec2d>& control_points = {}) {
     name_ = name;
     symbol_w_ = w;
     symbol_h_ = h;
@@ -52,8 +57,22 @@ public:
     pins_ = pins;
     anchor_pt_ = anchor_pt;
     resize_pt_ = resize_pt;
+    control_points_ = control_points;
     update();
   }
+
+  void set_control_points(const std::vector<core::Vec2d>& points) {
+    control_points_ = points;
+    update();
+  }
+
+  [[nodiscard]] const std::vector<core::Vec2d>& control_points() const noexcept {
+    return control_points_;
+  }
+
+signals:
+  void control_point_moved(int index, double nx, double ny);
+  void control_point_double_clicked(double nx, double ny);
 
 protected:
   void paintEvent(QPaintEvent* /*event*/) override {
@@ -75,34 +94,60 @@ protected:
     const double sx = (width() - sw) * 0.5;
     const double sy = (height() - sh) * 0.5;
 
+    // Save bounds for hit-testing
+    cached_sx_ = sx;
+    cached_sy_ = sy;
+    cached_sw_ = sw;
+    cached_sh_ = sh;
+
     const QRectF box(sx, sy, sw, sh);
 
-    // Box fill & stroke
-    p.setBrush(fill_);
-    QPen sp(stroke_, 2.0);
-    p.setPen(sp);
-    p.drawRoundedRect(box, 4.0, 4.0);
+    if (control_points_.size() >= 3) {
+      // Draw custom polygon geometry defined by control points
+      QPolygonF poly;
+      for (const auto& cp : control_points_) {
+        poly << QPointF(sx + cp.x * sw, sy + cp.y * sh);
+      }
+      p.setBrush(fill_);
+      QPen sp(stroke_, 2.0);
+      p.setPen(sp);
+      p.drawPolygon(poly);
 
-    // Header banner
-    const double banner_h = std::min(24.0, sh * 0.25);
-    const QRectF banner_rect(sx, sy, sw, banner_h);
-    p.setBrush(banner_);
-    p.setPen(Qt::NoPen);
-    p.drawRoundedRect(banner_rect, 4.0, 4.0);
-    p.drawRect(QRectF(sx, sy + banner_h - 4.0, sw, 4.0)); // Square bottom corners of banner
+      // Connect lines with subtle stroke
+      p.setPen(QPen(stroke_.lighter(120), 1.5, Qt::DashLine));
+      p.drawPolyline(poly);
+      if (!poly.isEmpty()) {
+        p.drawLine(poly.last(), poly.first());
+      }
+    } else {
+      // Standard Box fill & stroke
+      p.setBrush(fill_);
+      QPen sp(stroke_, 2.0);
+      p.setPen(sp);
+      p.drawRoundedRect(box, 4.0, 4.0);
 
-    // Label
-    p.setPen(Qt::white);
-    QFont f = p.font();
-    f.setBold(true);
-    f.setPointSize(std::max(7, static_cast<int>(banner_h * 0.5)));
-    p.setFont(f);
-    p.drawText(banner_rect, Qt::AlignCenter, name_);
+      // Header banner
+      const double banner_h = std::min(24.0, sh * 0.25);
+      const QRectF banner_rect(sx, sy, sw, banner_h);
+      p.setBrush(banner_);
+      p.setPen(Qt::NoPen);
+      p.drawRoundedRect(banner_rect, 4.0, 4.0);
+      p.drawRect(QRectF(sx, sy + banner_h - 4.0, sw, 4.0));
+
+      // Label
+      p.setPen(Qt::white);
+      QFont f = p.font();
+      f.setBold(true);
+      f.setPointSize(std::max(7, static_cast<int>(banner_h * 0.5)));
+      p.setFont(f);
+      p.drawText(banner_rect, Qt::AlignCenter, name_);
+    }
 
     // Pins
-    f.setBold(false);
-    f.setPointSize(std::max(6, f.pointSize() - 2));
-    p.setFont(f);
+    QFont f_pins = p.font();
+    f_pins.setBold(false);
+    f_pins.setPointSize(7);
+    p.setFont(f_pins);
 
     for (const auto& [pname, pdir, pside, ppos] : pins_) {
       double px = sx;
@@ -137,14 +182,36 @@ protected:
         align = Qt::AlignHCenter | Qt::AlignBottom;
       }
 
-      // Draw pin terminal square/dot
       p.setBrush(stroke_);
       p.setPen(Qt::NoPen);
       p.drawRect(QRectF(px - 3.0, py - 3.0, 6.0, 6.0));
 
-      // Draw pin name
       p.setPen(QColor(0xD1, 0xD5, 0xDB));
       p.drawText(QRectF(lx, ly, 54.0, 16.0), align, pname);
+    }
+
+    // Draw Custom Control Points (Amber Diamonds)
+    for (size_t i = 0; i < control_points_.size(); ++i) {
+      const double px = sx + control_points_[i].x * sw;
+      const double py = sy + control_points_[i].y * sh;
+      const bool is_drag = (dragged_point_idx_ == static_cast<int>(i));
+      const double sz = is_drag ? 7.0 : 5.5;
+
+      QPolygonF diamond;
+      diamond << QPointF(px, py - sz) << QPointF(px + sz, py)
+              << QPointF(px, py + sz) << QPointF(px - sz, py);
+
+      p.setPen(QPen(QColor(0x78, 0x35, 0x0F), is_drag ? 2.0 : 1.5));
+      p.setBrush(is_drag ? QColor(0xFB, 0xBF, 0x24) : QColor(0xF5, 0x9E, 0x0B));
+      p.drawPolygon(diamond);
+
+      p.setPen(Qt::white);
+      p.drawPoint(QPointF(px, py));
+
+      p.setFont(QFont("sans-serif", 7, QFont::Bold));
+      p.setPen(QColor(0xF5, 0x9E, 0x0B));
+      p.drawText(QRectF(px + 6.0, py - 8.0, 40.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
+                 QString("P%1").arg(i + 1));
     }
 
     // Draw Anchor Point marker (green target crosshair)
@@ -159,17 +226,70 @@ protected:
     p.setFont(QFont("sans-serif", 7, QFont::Bold));
     p.drawText(QRectF(ax + 7.0, ay - 8.0, 100.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter, "Anchor");
 
-    // Draw Resize Control Point marker (cyan diamond handle with resize arrow)
+    // Draw Resize Control Point marker (cyan diamond handle)
     const double rx = sx + resize_pt_.x * sw;
     const double ry = sy + resize_pt_.y * sh;
-    QPolygonF diamond;
-    diamond << QPointF(rx, ry - 6.0) << QPointF(rx + 6.0, ry)
-            << QPointF(rx, ry + 6.0) << QPointF(rx - 6.0, ry);
+    QPolygonF res_diamond;
+    res_diamond << QPointF(rx, ry - 6.0) << QPointF(rx + 6.0, ry)
+                << QPointF(rx, ry + 6.0) << QPointF(rx - 6.0, ry);
     p.setPen(QPen(QColor(0x00, 0xBC, 0xD4), 2.0));
     p.setBrush(QColor(0x00, 0xBC, 0xD4, 160));
-    p.drawPolygon(diamond);
+    p.drawPolygon(res_diamond);
     p.setPen(QColor(0x00, 0xBC, 0xD4));
     p.drawText(QRectF(rx + 7.0, ry - 8.0, 100.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter, "Resize Point");
+  }
+
+  void mousePressEvent(QMouseEvent* event) override {
+    if (event->button() == Qt::LeftButton && cached_sw_ > 1.0 && cached_sh_ > 1.0) {
+      for (size_t i = 0; i < control_points_.size(); ++i) {
+        const double px = cached_sx_ + control_points_[i].x * cached_sw_;
+        const double py = cached_sy_ + control_points_[i].y * cached_sh_;
+        const double dx = event->position().x() - px;
+        const double dy = event->position().y() - py;
+        if (dx * dx + dy * dy <= 64.0) {
+          dragged_point_idx_ = static_cast<int>(i);
+          update();
+          event->accept();
+          return;
+        }
+      }
+    }
+    QWidget::mousePressEvent(event);
+  }
+
+  void mouseMoveEvent(QMouseEvent* event) override {
+    if (dragged_point_idx_ >= 0 && dragged_point_idx_ < static_cast<int>(control_points_.size()) &&
+        cached_sw_ > 1.0 && cached_sh_ > 1.0) {
+      const double nx = std::clamp((event->position().x() - cached_sx_) / cached_sw_, 0.0, 1.0);
+      const double ny = std::clamp((event->position().y() - cached_sy_) / cached_sh_, 0.0, 1.0);
+      control_points_[dragged_point_idx_] = {nx, ny};
+      emit control_point_moved(dragged_point_idx_, nx, ny);
+      update();
+      event->accept();
+      return;
+    }
+    QWidget::mouseMoveEvent(event);
+  }
+
+  void mouseReleaseEvent(QMouseEvent* event) override {
+    if (dragged_point_idx_ >= 0) {
+      dragged_point_idx_ = -1;
+      update();
+      event->accept();
+      return;
+    }
+    QWidget::mouseReleaseEvent(event);
+  }
+
+  void mouseDoubleClickEvent(QMouseEvent* event) override {
+    if (event->button() == Qt::LeftButton && cached_sw_ > 1.0 && cached_sh_ > 1.0) {
+      const double nx = std::clamp((event->position().x() - cached_sx_) / cached_sw_, 0.0, 1.0);
+      const double ny = std::clamp((event->position().y() - cached_sy_) / cached_sh_, 0.0, 1.0);
+      emit control_point_double_clicked(nx, ny);
+      event->accept();
+      return;
+    }
+    QWidget::mouseDoubleClickEvent(event);
   }
 
 private:
@@ -182,6 +302,13 @@ private:
   std::vector<std::tuple<QString, QString, QString, double>> pins_;
   core::Vec2d anchor_pt_{0.0, 0.0};
   core::Vec2d resize_pt_{1.0, 1.0};
+  std::vector<core::Vec2d> control_points_;
+
+  double cached_sx_{0.0};
+  double cached_sy_{0.0};
+  double cached_sw_{0.0};
+  double cached_sh_{0.0};
+  int dragged_point_idx_{-1};
 };
 
 class SymbolEditorDialog : public QDialog {
@@ -201,12 +328,13 @@ public:
                      QWidget* parent = nullptr)
       : QDialog(parent), node_(node), parent_graph_(parent_graph), child_graph_(child_graph) {
     setWindowTitle(QString("Symbol Editor - %1").arg(QString::fromStdString(node.name)));
-    resize(780, 580);
+    resize(820, 600);
 
     auto* main_layout = new QHBoxLayout(this);
 
-    // Left column: Controls and Pin Table
+    // Left column: Tabbed Controls
     auto* left_vbox = new QVBoxLayout();
+    tab_widget_ = new QTabWidget(this);
 
     // 1. Symbol Dimensions & Colors Group
     auto* grp_props = new QGroupBox("Symbol Dimensions & Visual Style", this);
@@ -260,8 +388,6 @@ public:
     colors_row->addWidget(btn_color_fill_);
     colors_row->addWidget(btn_color_stroke_);
     f_props->addRow("Colors:", colors_row);
-
-    left_vbox->addWidget(grp_props);
 
     // 2. Instantiation Anchor & Resize Control Point Group
     auto* grp_inst = new QGroupBox("Instantiation Anchor & Resize Control Point", this);
@@ -322,9 +448,7 @@ public:
     resize_row->addWidget(spin_resize_y_);
     f_inst->addRow("Resize Control Point:", resize_row);
 
-    left_vbox->addWidget(grp_inst);
-
-    // 3. Definition Synchronization & Drift Group (Inclusive Language)
+    // 3. Definition Synchronization & Drift Group
     auto* grp_sync = new QGroupBox("Definition Synchronization & Drift Mode", this);
     auto* v_sync = new QVBoxLayout(grp_sync);
 
@@ -347,11 +471,53 @@ public:
     sync_btns_row->addWidget(btn_resync_primary_);
     v_sync->addLayout(sync_btns_row);
 
-    left_vbox->addWidget(grp_sync);
+    // Assemble Tab 1: Dimensions & Style
+    auto* tab_dims_widget = new QWidget(this);
+    auto* v_tab_dims = new QVBoxLayout(tab_dims_widget);
+    v_tab_dims->addWidget(grp_props);
+    v_tab_dims->addWidget(grp_inst);
+    v_tab_dims->addWidget(grp_sync);
+    v_tab_dims->addStretch();
+    tab_widget_->addTab(tab_dims_widget, "Dimensions & Style");
 
-    // 3. Pins & Ports Table
-    auto* grp_pins = new QGroupBox("Symbol Pins & Boundary Interface Ports", this);
-    auto* v_pins = new QVBoxLayout(grp_pins);
+    // Assemble Tab 2: Control Points & Geometry
+    auto* tab_points_widget = new QWidget(this);
+    auto* v_tab_points = new QVBoxLayout(tab_points_widget);
+
+    auto* lbl_pt_info = new QLabel(
+        "<b>Parametric Control Points & Polygon Vertices:</b><br>"
+        "Points define the shape perimeter. You can add, edit, or remove points below, "
+        "or double-click and drag handles directly on the live preview.", this);
+    lbl_pt_info->setWordWrap(true);
+    v_tab_points->addWidget(lbl_pt_info);
+
+    point_table_ = new QTableWidget(this);
+    point_table_->setColumnCount(3);
+    point_table_->setHorizontalHeaderLabels({"Point", "Normalized X [0..1]", "Normalized Y [0..1]"});
+    point_table_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    point_table_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    point_table_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+    point_table_->setSelectionBehavior(QAbstractItemView::SelectRows);
+    point_table_->setSelectionMode(QAbstractItemView::SingleSelection);
+
+    load_control_points();
+
+    auto* pt_btn_row = new QHBoxLayout();
+    btn_add_point_ = new QPushButton("+ Add Control Point", this);
+    btn_remove_point_ = new QPushButton("- Remove Point", this);
+    btn_reset_points_ = new QPushButton("Reset to Default", this);
+
+    pt_btn_row->addWidget(btn_add_point_);
+    pt_btn_row->addWidget(btn_remove_point_);
+    pt_btn_row->addWidget(btn_reset_points_);
+
+    v_tab_points->addWidget(point_table_);
+    v_tab_points->addLayout(pt_btn_row);
+    tab_widget_->addTab(tab_points_widget, "Control Points & Geometry");
+
+    // Assemble Tab 3: Pins & Interface Ports Table
+    auto* tab_pins_widget = new QWidget(this);
+    auto* v_pins = new QVBoxLayout(tab_pins_widget);
 
     pin_table_ = new QTableWidget(this);
     pin_table_->setColumnCount(4);
@@ -380,7 +546,9 @@ public:
 
     v_pins->addWidget(pin_table_);
     v_pins->addLayout(pin_btn_row);
-    left_vbox->addWidget(grp_pins);
+    tab_widget_->addTab(tab_pins_widget, "Pins & Ports");
+
+    left_vbox->addWidget(tab_widget_);
 
     // Dialog action buttons
     auto* dlg_buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
@@ -405,7 +573,97 @@ public:
     return rad_allow_drift_->isChecked();
   }
 
+  void add_control_point(core::Vec2d pt) {
+    core::insert_polygon_vertex_at_normalized(node_, pt);
+    control_points_ = node_.polygon_vertices;
+    populate_point_table();
+    refresh_preview();
+  }
+
+  void remove_control_point(int index) {
+    if (core::remove_polygon_vertex(node_, index)) {
+      control_points_ = node_.polygon_vertices;
+      populate_point_table();
+      refresh_preview();
+    }
+  }
+
+  [[nodiscard]] const std::vector<core::Vec2d>& control_points() const noexcept {
+    return control_points_;
+  }
+
+  void set_control_points(const std::vector<core::Vec2d>& pts) {
+    control_points_ = pts;
+    populate_point_table();
+    refresh_preview();
+  }
+
 private:
+  void load_control_points() {
+    control_points_ = node_.polygon_vertices;
+    if (control_points_.empty()) {
+      if (node_.shape == core::ShapeType::Rectangle || node_.shape == core::ShapeType::RoundedRect ||
+          node_.shape == core::ShapeType::HierarchicalBlock || node_.shape == core::ShapeType::CustomPolygon) {
+        control_points_ = {
+          {0.0, 0.0},
+          {1.0, 0.0},
+          {1.0, 1.0},
+          {0.0, 1.0}
+        };
+      }
+    }
+    populate_point_table();
+  }
+
+  void populate_point_table() {
+    point_table_->blockSignals(true);
+    point_table_->setRowCount(static_cast<int>(control_points_.size()));
+    for (int r = 0; r < static_cast<int>(control_points_.size()); ++r) {
+      const auto& pt = control_points_[static_cast<size_t>(r)];
+
+      auto* item_idx = new QTableWidgetItem(QString("Point %1").arg(r + 1));
+      item_idx->setFlags(item_idx->flags() & ~Qt::ItemIsEditable);
+      point_table_->setItem(r, 0, item_idx);
+
+      auto* spin_x = new QDoubleSpinBox(point_table_);
+      spin_x->setRange(0.0, 1.0);
+      spin_x->setSingleStep(0.05);
+      spin_x->setValue(pt.x);
+      point_table_->setCellWidget(r, 1, spin_x);
+
+      auto* spin_y = new QDoubleSpinBox(point_table_);
+      spin_y->setRange(0.0, 1.0);
+      spin_y->setSingleStep(0.05);
+      spin_y->setValue(pt.y);
+      point_table_->setCellWidget(r, 2, spin_y);
+
+      connect(spin_x, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, r](double vx) {
+        if (r < static_cast<int>(control_points_.size())) {
+          control_points_[static_cast<size_t>(r)].x = vx;
+          refresh_preview();
+        }
+      });
+      connect(spin_y, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, r](double vy) {
+        if (r < static_cast<int>(control_points_.size())) {
+          control_points_[static_cast<size_t>(r)].y = vy;
+          refresh_preview();
+        }
+      });
+    }
+    point_table_->blockSignals(false);
+  }
+
+  void sync_control_points_from_table() {
+    for (int r = 0; r < point_table_->rowCount() && r < static_cast<int>(control_points_.size()); ++r) {
+      if (auto* sx = qobject_cast<QDoubleSpinBox*>(point_table_->cellWidget(r, 1))) {
+        control_points_[static_cast<size_t>(r)].x = sx->value();
+      }
+      if (auto* sy = qobject_cast<QDoubleSpinBox*>(point_table_->cellWidget(r, 2))) {
+        control_points_[static_cast<size_t>(r)].y = sy->value();
+      }
+    }
+  }
+
   void load_pins() {
     pins_.clear();
     for (core::PortId pid : node_.port_ids) {
@@ -575,6 +833,72 @@ private:
         refresh_preview();
       }
     });
+
+    // Control Point Button Connections
+    connect(btn_add_point_, &QPushButton::clicked, this, [this]() {
+      sync_control_points_from_table();
+      if (control_points_.empty()) {
+        control_points_ = {{0.0, 0.0}, {1.0, 0.0}, {1.0, 1.0}, {0.0, 1.0}};
+      }
+      const int sel_row = point_table_->currentRow();
+      const size_t insert_idx = (sel_row >= 0 && sel_row < static_cast<int>(control_points_.size()))
+          ? static_cast<size_t>(sel_row) : control_points_.size() - 1;
+      const size_t next_idx = (insert_idx + 1) % control_points_.size();
+      const auto pA = control_points_[insert_idx];
+      const auto pB = control_points_[next_idx];
+      const core::Vec2d mid = {(pA.x + pB.x) * 0.5, (pA.y + pB.y) * 0.5};
+      control_points_.insert(control_points_.begin() + insert_idx + 1, mid);
+      populate_point_table();
+      point_table_->selectRow(static_cast<int>(insert_idx + 1));
+      refresh_preview();
+    });
+
+    connect(btn_remove_point_, &QPushButton::clicked, this, [this]() {
+      const int row = point_table_->currentRow();
+      if (row >= 0 && row < static_cast<int>(control_points_.size()) && control_points_.size() > 3) {
+        sync_control_points_from_table();
+        control_points_.erase(control_points_.begin() + row);
+        populate_point_table();
+        refresh_preview();
+      }
+    });
+
+    connect(btn_reset_points_, &QPushButton::clicked, this, [this]() {
+      control_points_ = {{0.0, 0.0}, {1.0, 0.0}, {1.0, 1.0}, {0.0, 1.0}};
+      populate_point_table();
+      refresh_preview();
+    });
+
+    // Preview interactive signals
+    connect(preview_widget_, &SymbolPreviewWidget::control_point_moved, this, [this](int idx, double nx, double ny) {
+      if (idx >= 0 && idx < static_cast<int>(control_points_.size())) {
+        control_points_[static_cast<size_t>(idx)] = {nx, ny};
+        if (auto* sx = qobject_cast<QDoubleSpinBox*>(point_table_->cellWidget(idx, 1))) {
+          sx->blockSignals(true);
+          sx->setValue(nx);
+          sx->blockSignals(false);
+        }
+        if (auto* sy = qobject_cast<QDoubleSpinBox*>(point_table_->cellWidget(idx, 2))) {
+          sy->blockSignals(true);
+          sy->setValue(ny);
+          sy->blockSignals(false);
+        }
+      }
+    });
+
+    connect(preview_widget_, &SymbolPreviewWidget::control_point_double_clicked, this, [this](double nx, double ny) {
+      sync_control_points_from_table();
+      if (control_points_.empty()) {
+        control_points_ = {{0.0, 0.0}, {1.0, 0.0}, {1.0, 1.0}, {0.0, 1.0}};
+      }
+      core::Node dummy;
+      dummy.polygon_vertices = control_points_;
+      const int ins = core::insert_polygon_vertex_at_normalized(dummy, {nx, ny});
+      control_points_ = dummy.polygon_vertices;
+      populate_point_table();
+      point_table_->selectRow(ins);
+      refresh_preview();
+    });
   }
 
   void sync_pins_from_table() {
@@ -613,6 +937,8 @@ private:
 public:
   void refresh_preview() {
     sync_pins_from_table();
+    sync_control_points_from_table();
+
     std::vector<std::tuple<QString, QString, QString, double>> preview_pins;
     for (const auto& p : pins_) {
       preview_pins.emplace_back(p.name, p.direction, p.side, p.normalized_pos);
@@ -625,11 +951,12 @@ public:
     preview_widget_->set_symbol_info(
         txt_name_->text(), spin_w_->value(), spin_h_->value(),
         fill_color_, stroke_color_, banner_color_, preview_pins,
-        anc_pt, res_pt);
+        anc_pt, res_pt, control_points_);
   }
 
   void apply_and_accept() {
     sync_pins_from_table();
+    sync_control_points_from_table();
 
     // 1. Update node basic parameters
     node_.name = txt_name_->text().toStdString();
@@ -644,6 +971,13 @@ public:
     }
     if (spin_resize_x_ && spin_resize_y_) {
       node_.set_symbol_resize_point({spin_resize_x_->value(), spin_resize_y_->value()});
+    }
+
+    // Save custom control points
+    if (!control_points_.empty()) {
+      node_.polygon_vertices = control_points_;
+      node_.shape = core::ShapeType::CustomPolygon;
+      node_.properties["parametric_type"] = "custom_polygon";
     }
 
     const bool drift = rad_allow_drift_->isChecked();
@@ -716,6 +1050,8 @@ public:
   core::GraphModel& parent_graph_;
   core::GraphModel* child_graph_{nullptr};
 
+  QTabWidget* tab_widget_{nullptr};
+
   QLineEdit* txt_name_{nullptr};
   QDoubleSpinBox* spin_w_{nullptr};
   QDoubleSpinBox* spin_h_{nullptr};
@@ -735,6 +1071,11 @@ public:
   QRadioButton* rad_allow_drift_{nullptr};
   QPushButton* btn_resync_primary_{nullptr};
 
+  QTableWidget* point_table_{nullptr};
+  QPushButton* btn_add_point_{nullptr};
+  QPushButton* btn_remove_point_{nullptr};
+  QPushButton* btn_reset_points_{nullptr};
+
   QTableWidget* pin_table_{nullptr};
   QPushButton* btn_add_pin_{nullptr};
   QPushButton* btn_remove_pin_{nullptr};
@@ -748,6 +1089,7 @@ public:
   QColor fill_color_;
   QColor stroke_color_;
   std::vector<PinConfig> pins_;
+  std::vector<core::Vec2d> control_points_;
 };
 
 } // namespace vector::gui

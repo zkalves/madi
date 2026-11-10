@@ -3103,6 +3103,137 @@ int main(int argc, char* argv[]) {
     std::cout << "[Test 39] Smart Parametric Shape Handles (Arrow Points & Attached Lines) passed successfully!" << std::endl;
   }
 
+  // 40. Test Custom Control Points & Vertex Editing (Symbol Editor & Drawing Area)
+  {
+    std::cout << "===> Testing Custom Control Points & Vertex Editing (Symbol Editor & Drawing Area)..." << std::endl;
+    vector::gui::MainWindow hwin;
+    hwin.resize(1024, 768);
+    auto* canvas = hwin.canvas();
+    assert(canvas != nullptr);
+    auto* graph = canvas->graph_model();
+    assert(graph != nullptr);
+    graph->clear();
+
+    // 1. Test Control Point Configuration in SymbolEditorDialog
+    vector::core::Node test_node;
+    test_node.name = "CustomEDAComponent";
+    test_node.shape = vector::core::ShapeType::Rectangle;
+    test_node.bounds = {150.0, 150.0, 200.0, 120.0};
+    const auto nid = graph->add_node(std::move(test_node));
+    auto* placed_node = graph->find_node(nid);
+    assert(placed_node != nullptr);
+
+    {
+      vector::gui::SymbolEditorDialog dlg(*placed_node, *graph, nullptr, &hwin);
+      // Default rectangle initial control points (4 corners)
+      assert(dlg.control_points().size() == 4);
+      assert(dlg.point_table_->rowCount() == 4);
+
+      // A: Add control point via API
+      dlg.add_control_point({0.5, 0.0});
+      assert(dlg.control_points().size() == 5);
+      assert(dlg.point_table_->rowCount() == 5);
+
+      // B: Add control point via UI button
+      dlg.btn_add_point_->click();
+      assert(dlg.control_points().size() == 6);
+      assert(dlg.point_table_->rowCount() == 6);
+
+      // C: Remove a control point via UI button
+      dlg.point_table_->selectRow(1);
+      dlg.btn_remove_point_->click();
+      assert(dlg.control_points().size() == 5);
+      assert(dlg.point_table_->rowCount() == 5);
+
+      dlg.refresh_preview();
+      dlg.apply_and_accept();
+    }
+
+    // Verify node updated with custom control points and shape
+    assert(placed_node->polygon_vertices.size() == 5);
+    assert(placed_node->shape == vector::core::ShapeType::CustomPolygon);
+    assert(placed_node->properties["parametric_type"] == "custom_polygon");
+
+    // 2. Test Control Point Insertion & Editing in Main Drawing Area
+    canvas->select_node(nid, false);
+    assert(canvas->selected_nodes().size() == 1);
+
+    const size_t initial_count = placed_node->polygon_vertices.size();
+    // Insert control point at world (250, 150) (top edge midpoint)
+    const bool ins_ok = canvas->insert_control_point_at_world(nid, {250.0, 150.0});
+    assert(ins_ok);
+    assert(placed_node->polygon_vertices.size() == initial_count + 1);
+    (void)initial_count;
+    (void)ins_ok;
+
+    // Verify Undo/Redo for added control point
+    assert(canvas->command_history() != nullptr);
+    assert(canvas->command_history()->can_undo());
+    canvas->command_history()->undo();
+    assert(placed_node->polygon_vertices.size() == initial_count);
+
+    canvas->command_history()->redo();
+    assert(placed_node->polygon_vertices.size() == initial_count + 1);
+
+    // 3. Test Moving the Control Point (and Attached Lines)
+    const int new_pt_idx = 1;
+    const auto pt_handle = vector::renderer::make_parametric_point_handle(new_pt_idx);
+    // Drag point to (250, 130) -> ny becomes (130 - 150)/120 < 0 -> clamped to 0.0
+    // Drag to (250, 170) -> ny = (170 - 150)/120 = 0.1667
+    canvas->apply_parametric_drag(*placed_node, pt_handle, {250.0, 170.0}, false);
+    assert(std::abs(placed_node->polygon_vertices[new_pt_idx].y - ((170.0 - 150.0) / 120.0)) < 1e-3);
+
+    // 4. Test Moving Attached Line Segment
+    const auto line_handle = vector::renderer::make_parametric_line_handle(new_pt_idx);
+    const double before_x1 = placed_node->polygon_vertices[new_pt_idx].x;
+    canvas->apply_parametric_drag(*placed_node, line_handle, {270.0, 170.0}, false);
+    // Line drag moves both vertices of the segment
+    assert(placed_node->polygon_vertices[new_pt_idx].x != before_x1);
+    (void)before_x1;
+
+    // 5. Test Double-Click on Shape Edge to Add Point
+    const size_t pre_dc_count = placed_node->polygon_vertices.size();
+    // World point near right edge: bounds x=150, w=200 -> right edge is at x=350, y=210
+    const auto s_edge = canvas->world_to_screen({350.0, 210.0});
+    const QPointF q_edge(s_edge.x, s_edge.y);
+    QMouseEvent dbl_click(QEvent::MouseButtonDblClick, q_edge, q_edge, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &dbl_click);
+    assert(placed_node->polygon_vertices.size() == pre_dc_count + 1);
+    (void)pre_dc_count;
+
+    // 6. Test Removing Control Point
+    const size_t pre_rem_count = placed_node->polygon_vertices.size();
+    const bool rem_ok = canvas->remove_control_point(nid, 2);
+    assert(rem_ok);
+    assert(placed_node->polygon_vertices.size() == pre_rem_count - 1);
+    (void)pre_rem_count;
+    (void)rem_ok;
+
+    // Undo removal
+    canvas->command_history()->undo();
+    assert(placed_node->polygon_vertices.size() == pre_rem_count);
+
+    // 7. Test New Shapes Instant Control Point Creation
+    const auto new_shape_id = canvas->add_shape(vector::core::ShapeType::Rectangle, {500.0, 400.0}, "NewBox", false);
+    assert(new_shape_id != vector::core::InvalidNodeId);
+    auto* new_shape = graph->find_node(new_shape_id);
+    assert(new_shape != nullptr);
+    assert(new_shape->polygon_vertices.empty());
+
+    // Insert point immediately on new shape -> converts to polygon and inserts point
+    const bool new_ins_ok = canvas->insert_control_point_at_world(new_shape_id, {500.0, 370.0});
+    assert(new_ins_ok);
+    assert(new_shape->shape == vector::core::ShapeType::CustomPolygon);
+    assert(new_shape->polygon_vertices.size() == 5);
+    (void)new_shape;
+    (void)new_ins_ok;
+
+    // Clean frame rendering test
+    canvas->render_frame_for_test();
+
+    std::cout << "[Test 40] Shape Control Points & Vertex Editing in Symbol Editor & Drawing Area passed successfully!" << std::endl;
+  }
+
   std::cout << "===> All Theme System, Snapping & Hierarchical Port Smoke Tests passed successfully!" << std::endl;
   return 0;
 }

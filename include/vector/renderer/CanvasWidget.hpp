@@ -197,7 +197,7 @@ inline core::Vec2d get_page_preset_dimensions(PagePreset preset, PageOrientation
 }
 
 enum class HandleType : uint8_t {
-  None,
+  None = 0,
   TopLeft,
   TopCenter,
   TopRight,
@@ -211,22 +211,61 @@ enum class HandleType : uint8_t {
   QuickConnectEast,
   QuickConnectSouth,
   QuickConnectWest,
-  ParametricPoint0,
+  ParametricLineShaftTop,
+  ParametricLineShaftBottom,
+  ParametricLineShoulder,
+  // Generic parametric edge lines (up to 32): 20..51
+  ParametricLine0 = 20,
+  // Generic parametric points (up to 180): 64..244
+  ParametricPoint0 = 64,
   ParametricPoint1,
   ParametricPoint2,
   ParametricPoint3,
   ParametricPoint4,
   ParametricPoint5,
   ParametricPoint6,
-  ParametricPoint7,
-  ParametricLineShaftTop,
-  ParametricLineShaftBottom,
-  ParametricLineShoulder
+  ParametricPoint7
 };
 
+inline bool is_parametric_point(HandleType h) noexcept {
+  const auto val = static_cast<uint8_t>(h);
+  return val >= static_cast<uint8_t>(HandleType::ParametricPoint0) && val <= 245;
+}
+
+inline bool is_parametric_line(HandleType h) noexcept {
+  const auto val = static_cast<uint8_t>(h);
+  return (val >= static_cast<uint8_t>(HandleType::ParametricLineShaftTop) &&
+          val <= static_cast<uint8_t>(HandleType::ParametricLineShoulder)) ||
+         (val >= static_cast<uint8_t>(HandleType::ParametricLine0) &&
+          val < static_cast<uint8_t>(HandleType::ParametricPoint0));
+}
+
 inline bool is_parametric_handle(HandleType h) noexcept {
-  return static_cast<uint8_t>(h) >= static_cast<uint8_t>(HandleType::ParametricPoint0) &&
-         static_cast<uint8_t>(h) <= static_cast<uint8_t>(HandleType::ParametricLineShoulder);
+  return is_parametric_point(h) || is_parametric_line(h);
+}
+
+inline int parametric_point_index(HandleType h) noexcept {
+  if (is_parametric_point(h)) {
+    return static_cast<int>(static_cast<uint8_t>(h) - static_cast<uint8_t>(HandleType::ParametricPoint0));
+  }
+  return -1;
+}
+
+inline int parametric_line_index(HandleType h) noexcept {
+  const auto val = static_cast<uint8_t>(h);
+  if (val >= static_cast<uint8_t>(HandleType::ParametricLine0) &&
+      val < static_cast<uint8_t>(HandleType::ParametricPoint0)) {
+    return static_cast<int>(val - static_cast<uint8_t>(HandleType::ParametricLine0));
+  }
+  return -1;
+}
+
+inline HandleType make_parametric_point_handle(int idx) noexcept {
+  return static_cast<HandleType>(static_cast<uint8_t>(HandleType::ParametricPoint0) + std::clamp(idx, 0, 180));
+}
+
+inline HandleType make_parametric_line_handle(int idx) noexcept {
+  return static_cast<HandleType>(static_cast<uint8_t>(HandleType::ParametricLine0) + std::clamp(idx, 0, 31));
 }
 
 enum class WireCrossingStyle : uint8_t {
@@ -322,6 +361,9 @@ public:
       double width = 120.0,
       double height = 100.0,
       bool snap_pos = true);
+  bool insert_control_point_at_world(core::NodeId node_id, core::Vec2d world_pt);
+  bool remove_control_point(core::NodeId node_id, int point_index);
+  void apply_parametric_drag(core::Node& node, HandleType handle, core::Vec2d unrot_cursor, bool symmetric);
   void delete_selected();
   void select_all();
   void clear_selection();
@@ -558,7 +600,6 @@ private:
   core::PortId find_hit_port(core::Vec2d world_pt, double tolerance, core::NodeId* out_node = nullptr) const;
   void update_smart_alignment_guides(core::NodeId dragged_node);
   void finalize_instantiation();
-  void apply_parametric_drag(core::Node& node, HandleType handle, core::Vec2d unrot_cursor, bool symmetric);
 
   core::GraphModel* graph_model_{nullptr};
   core::ISpatialIndex* spatial_index_{nullptr};
@@ -622,6 +663,8 @@ private:
   HandleType hovered_handle_{HandleType::None};
   core::NodeId active_handle_node_{core::InvalidNodeId};
   core::NodeId hovered_node_{core::InvalidNodeId};
+  int selected_control_point_index_{-1};
+  core::NodeId selected_control_point_node_{core::InvalidNodeId};
   core::Rect2d resize_initial_bounds_;
   core::Vec2d resize_start_world_{0.0, 0.0};
   std::vector<grid::SnapGuideLine> active_smart_guides_;
