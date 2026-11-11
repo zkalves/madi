@@ -1,5 +1,6 @@
 # ==============================================================================
-# VECTOR - Multi-Stage OCI Containerfile (Docker & Podman compatible)
+# Madí - Multi-Stage OCI Containerfile (Docker & Podman compatible)
+# Homage to Arte Madí (Buenos Aires, 1946) — Broken Canvas, Linear Grids & Articulated Spatial Structures
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
@@ -48,15 +49,15 @@ RUN DESTDIR=/staging cmake --install build
 # ------------------------------------------------------------------------------
 FROM ubuntu:24.04 AS runtime
 
-LABEL org.opencontainers.image.title="VECTOR" \
-      org.opencontainers.image.description="Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing" \
-      org.opencontainers.image.authors="VECTOR Contributors" \
+LABEL org.opencontainers.image.title="Madí" \
+      org.opencontainers.image.description="Model, Align & Diagram Interconnects — Homage to Arte Madí (1946)" \
+      org.opencontainers.image.authors="Madí Contributors" \
       org.opencontainers.image.licenses="GPL-3.0-or-later" \
       org.opencontainers.image.source="https://github.com/vector/vector"
 
 ENV DEBIAN_FRONTEND=noninteractive \
     QT_QPA_PLATFORM=xcb \
-    XDG_RUNTIME_DIR=/tmp/runtime-vector
+    XDG_RUNTIME_DIR=/tmp/runtime-madi
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libqt6core6 \
@@ -93,12 +94,12 @@ COPY packaging/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Create non-root unprivileged user
-RUN useradd -m -s /bin/bash -u 1000 vector && \
-    mkdir -p /tmp/runtime-vector && \
-    chown -R vector:vector /tmp/runtime-vector
+RUN useradd -m -s /bin/bash -u 1000 madi && \
+    mkdir -p /tmp/runtime-madi && \
+    chown -R madi:madi /tmp/runtime-madi
 
-USER vector
-WORKDIR /home/vector
+USER madi
+WORKDIR /home/madi
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["vector-gui"]
+CMD ["madi-gui"]

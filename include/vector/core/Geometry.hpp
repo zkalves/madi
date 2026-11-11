@@ -406,4 +406,6 @@ concept SpatialEntity = requires(T entity) {
 
 }  // namespace vector::core
 
+namespace madi = vector;
+
 #endif  // VECTOR_CORE_GEOMETRY_HPP

@@ -1,5 +1,6 @@
-// VECTOR - Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing
-// Copyright (C) 2026 VECTOR Contributors
+// Madí - Model, Align & Diagram Interconnects
+// Homage to Arte Madí (Buenos Aires, 1946) — Broken Canvas, Linear Grids & Articulated Spatial Structures
+// Copyright (C) 2026 Madí Contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "vector/gui/MainWindow.hpp"
@@ -9,8 +10,9 @@
 
 int main(int argc, char* argv[]) {
   QApplication app(argc, argv);
-  app.setApplicationName("VECTOR");
-  app.setApplicationDisplayName("VECTOR - Viewport Engine");
+  app.setApplicationName("madi");
+  app.setApplicationDisplayName("Madí - Model, Align & Diagram Interconnects");
+  app.setApplicationVersion("1.0.0-alpha");
 
   vector::gui::MainWindow window;
 

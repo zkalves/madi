@@ -83,7 +83,7 @@ class MainWindow : public QMainWindow {
 
 public:
   explicit MainWindow(QWidget* parent = nullptr) : QMainWindow(parent) {
-    setWindowTitle("VECTOR - Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing");
+    setWindowTitle("Madí - Model, Align & Diagram Interconnects");
     resize(1360, 860);
 
     // Initialize Core Engine
@@ -371,7 +371,7 @@ public:
 
     update_snap_ui();
     update_angle_snap_ui();
-    statusBar()->showMessage("VECTOR ready. Select a tool from the toolbar or palette to insert figures.", 4000);
+    statusBar()->showMessage("Madí ready. Select a tool from the toolbar or palette to insert figures.", 4000);
   }
 
   ~MainWindow() override {
@@ -459,23 +459,31 @@ public:
     if (custom_settings) {
       return custom_settings->value("General/remember_settings_accepted", false).toBool();
     }
-    QSettings settings("VECTOR", "VectorDiagrammer");
-    return settings.value("General/remember_settings_accepted", false).toBool();
+    QSettings settings("MADI", "MadiDiagrammer");
+    if (settings.contains("General/remember_settings_accepted")) {
+      return settings.value("General/remember_settings_accepted", false).toBool();
+    }
+    QSettings legacy_settings("VECTOR", "VectorDiagrammer");
+    return legacy_settings.value("General/remember_settings_accepted", false).toBool();
   }
 
   [[nodiscard]] bool is_remember_settings_prompted(QSettings* custom_settings = nullptr) const {
     if (custom_settings) {
       return custom_settings->contains("General/remember_settings_accepted");
     }
-    QSettings settings("VECTOR", "VectorDiagrammer");
-    return settings.contains("General/remember_settings_accepted");
+    QSettings settings("MADI", "MadiDiagrammer");
+    if (settings.contains("General/remember_settings_accepted")) {
+      return true;
+    }
+    QSettings legacy_settings("VECTOR", "VectorDiagrammer");
+    return legacy_settings.contains("General/remember_settings_accepted");
   }
 
   void set_remember_settings_accepted(bool accepted, QSettings* custom_settings = nullptr) {
     if (custom_settings) {
       custom_settings->setValue("General/remember_settings_accepted", accepted);
     } else {
-      QSettings settings("VECTOR", "VectorDiagrammer");
+      QSettings settings("MADI", "MadiDiagrammer");
       settings.setValue("General/remember_settings_accepted", accepted);
     }
     if (action_remember_settings_) {
@@ -492,7 +500,7 @@ public:
     std::unique_ptr<QSettings> local_settings;
     QSettings* s = custom_settings;
     if (!s) {
-      local_settings = std::make_unique<QSettings>("VECTOR", "VectorDiagrammer");
+      local_settings = std::make_unique<QSettings>("MADI", "MadiDiagrammer");
       s = local_settings.get();
     }
 
@@ -564,7 +572,13 @@ public:
     std::unique_ptr<QSettings> local_settings;
     QSettings* s = custom_settings;
     if (!s) {
-      local_settings = std::make_unique<QSettings>("VECTOR", "VectorDiagrammer");
+      local_settings = std::make_unique<QSettings>("MADI", "MadiDiagrammer");
+      if (!local_settings->contains("Window/geometry")) {
+        QSettings legacy("VECTOR", "VectorDiagrammer");
+        if (legacy.contains("Window/geometry")) {
+          local_settings = std::make_unique<QSettings>("VECTOR", "VectorDiagrammer");
+        }
+      }
       s = local_settings.get();
     }
 
@@ -778,7 +792,7 @@ protected:
         const QMessageBox::StandardButton res = QMessageBox::question(
             this,
             "Remember Workspace Settings",
-            "Would you like VECTOR to remember your window positions, dock layout, themes, colors, and settings for future sessions?",
+            "Would you like Madí to remember your window positions, dock layout, themes, colors, and settings for future sessions?",
             QMessageBox::Yes | QMessageBox::No,
             QMessageBox::Yes);
         const bool accepted = (res == QMessageBox::Yes);
@@ -1702,13 +1716,16 @@ private:
       }
     });
     menu_help->addSeparator();
-    menu_help->addAction("About VECTOR...", this, [this]() {
-      QMessageBox::about(this, "About VECTOR",
-        "<h3>VECTOR 1.0.0</h3>"
-        "<p><b>Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing</b></p>"
-        "<p>High-performance open-source 2D diagramming and schematic engine.<br>"
+    menu_help->addAction("About Madí...", this, [this]() {
+      QMessageBox::about(this, "About Madí",
+        "<h3>Madí 1.0.0</h3>"
+        "<p><b>Model, Align & Diagram Interconnects</b></p>"
+        "<p>Named in homage to <b>Madí (Arte Madí, Buenos Aires 1946)</b> — the avant-garde geometric art movement "
+        "renowned for broken canvas frames (<i>marco recortado</i>), linear grids, and articulated spatial structures.</p>"
+        "<p>High-performance open-source 2D diagramming, schematic, and interconnect engine.<br>"
         "Built with modern C++20 and Qt 6 on Linux (Wayland / X11).</p>"
-        "<p>Features modular hideable toolbars, hierarchical drill-down, 2D CSG boolean operations, and polygon geometry.</p>"
+        "<p>Features modular hideable toolbars, hierarchical drill-down, 2D CSG boolean operations, parametric control points, "
+        "multi-point arrow routing, and deterministic YAML (<code>.madi</code>) storage.</p>"
         "<p>Licensed under GNU GPLv3.</p>");
     });
   }
@@ -2862,7 +2879,7 @@ private:
       if (n->is_file_subsystem()) {
         canvas_->convert_subsystem_to_builtin(active_inspected_node_);
       } else {
-        const QString fpath = QFileDialog::getSaveFileName(this, "Export Subsystem to File", QString::fromStdString(n->name + ".yaml"), "VECTOR YAML (*.yaml);;All Files (*)");
+        const QString fpath = QFileDialog::getSaveFileName(this, "Export Subsystem to File", QString::fromStdString(n->name + ".madi"), "Madí Diagram (*.madi);;Madí YAML (*.yaml);;All Files (*)");
         if (!fpath.isEmpty()) {
           canvas_->convert_subsystem_to_file(active_inspected_node_, fpath.toStdString());
         }
@@ -3383,7 +3400,7 @@ public:
   }
 
   void update_window_title() {
-    QString title = "VECTOR";
+    QString title = "Madí";
     if (!current_file_path_.isEmpty()) {
       QFileInfo fi(current_file_path_);
       title += " - " + fi.fileName();
@@ -3470,7 +3487,9 @@ public:
     }
 
     std::string content_out;
-    if (filename.endsWith(".yaml", Qt::CaseInsensitive) || filename.endsWith(".yml", Qt::CaseInsensitive)) {
+    if (filename.endsWith(".madi", Qt::CaseInsensitive) ||
+        filename.endsWith(".yaml", Qt::CaseInsensitive) ||
+        filename.endsWith(".yml", Qt::CaseInsensitive)) {
       vector::io::StorageEngine storage;
       content_out = storage.serialize_yaml(*graph_);
     } else {
@@ -3502,10 +3521,10 @@ public:
   }
 
   bool save_diagram_as() {
-    const QString default_name = current_file_path_.isEmpty() ? "diagram.xml" : current_file_path_;
+    const QString default_name = current_file_path_.isEmpty() ? "diagram.madi" : current_file_path_;
     const QString filename = QFileDialog::getSaveFileName(
         this, "Save Diagram", default_name,
-        "Draw.io XML Diagram (*.xml *.drawio);;VECTOR YAML (*.yaml *.yml);;All Files (*)");
+        "Madí Diagram (*.madi);;Draw.io XML Diagram (*.xml *.drawio);;Madí YAML (*.yaml *.yml);;All Files (*)");
     if (filename.isEmpty()) {
       return false;
     }
@@ -3518,7 +3537,7 @@ public:
     }
     const QString filename = QFileDialog::getOpenFileName(
         this, "Open Diagram", "",
-        "Supported Formats (*.xml *.drawio *.yaml *.yml *.diag);;Draw.io XML Diagram (*.xml *.drawio);;VECTOR YAML (*.yaml *.yml);;All Files (*)");
+        "Supported Formats (*.madi *.xml *.drawio *.yaml *.yml *.diag);;Madí Diagram (*.madi);;Draw.io XML Diagram (*.xml *.drawio);;Madí YAML (*.yaml *.yml);;All Files (*)");
     if (!filename.isEmpty()) {
       open_diagram_path(filename);
     }
@@ -3541,7 +3560,9 @@ public:
     }
     graph_->clear();
 
-    const bool is_yaml = filename.endsWith(".yaml", Qt::CaseInsensitive) || filename.endsWith(".yml", Qt::CaseInsensitive);
+    const bool is_yaml = filename.endsWith(".madi", Qt::CaseInsensitive) ||
+                         filename.endsWith(".yaml", Qt::CaseInsensitive) ||
+                         filename.endsWith(".yml", Qt::CaseInsensitive);
     bool imported = false;
     std::string err_msg;
 
@@ -4297,5 +4318,7 @@ public:
 };
 
 } // namespace vector::gui
+
+namespace madi = vector;
 
 #endif // VECTOR_GUI_MAIN_WINDOW_HPP

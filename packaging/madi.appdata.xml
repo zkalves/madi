@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.madi.editor</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Madí</name>
+  <summary>Model, Align &amp; Diagram Interconnects — Homage to Arte Madí (1946)</summary>
+  <description>
+    <p>
+      Madí (mah-DEE) is a professional schematic and technical diagram viewport engine
+      named in homage to Arte Madí (Buenos Aires, 1946), famous for polygon frames (marco recortado),
+      linear grids, and articulated spatial structures.
+    </p>
+    <ul>
+      <li>Autonomous orthogonal Manhattan routing with dynamic bridge crossings</li>
+      <li>Hierarchical multi-level schematics with drill-down and symbol generation</li>
+      <li>Comprehensive shape stencil library with Boolean geometry operations and parametric controls</li>
+      <li>Customizable themes with high-contrast, dark, and light modes</li>
+      <li>Deterministic line-oriented YAML (.madi) serialization and bidirectional Draw.io XML</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">madi.desktop</launchable>
+  <url type="homepage">https://github.com/vector/vector</url>
+  <provides>
+    <binary>madi-gui</binary>
+    <binary>madi</binary>
+  </provides>
+</component>

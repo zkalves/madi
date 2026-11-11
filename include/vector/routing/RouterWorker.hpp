@@ -117,4 +117,6 @@ private:
 
 }  // namespace vector::routing
 
+namespace madi = vector;
+
 #endif  // VECTOR_ROUTING_ROUTER_WORKER_HPP

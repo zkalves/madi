@@ -4274,9 +4274,14 @@ void CanvasWidget::enterEvent(QEnterEvent* event) {
 }
 
 void CanvasWidget::dragEnterEvent(QDragEnterEvent* event) {
-  if (event->mimeData()->hasFormat("application/x-vector-stencil") || event->mimeData()->hasUrls()) {
-    if (event->mimeData()->hasFormat("application/x-vector-stencil")) {
-      const QByteArray bytes = event->mimeData()->data("application/x-vector-stencil");
+  if (event->mimeData()->hasFormat("application/x-madi-stencil") ||
+      event->mimeData()->hasFormat("application/x-vector-stencil") ||
+      event->mimeData()->hasUrls()) {
+    if (event->mimeData()->hasFormat("application/x-madi-stencil") ||
+        event->mimeData()->hasFormat("application/x-vector-stencil")) {
+      const QByteArray bytes = event->mimeData()->hasFormat("application/x-madi-stencil")
+          ? event->mimeData()->data("application/x-madi-stencil")
+          : event->mimeData()->data("application/x-vector-stencil");
       deserialize_placement_template(bytes, drag_template_);
       is_drag_active_ = true;
 
@@ -4300,7 +4305,8 @@ void CanvasWidget::dragEnterEvent(QDragEnterEvent* event) {
 }
 
 void CanvasWidget::dragMoveEvent(QDragMoveEvent* event) {
-  if (event->mimeData()->hasFormat("application/x-vector-stencil")) {
+  if (event->mimeData()->hasFormat("application/x-madi-stencil") ||
+      event->mimeData()->hasFormat("application/x-vector-stencil")) {
     const QPointF pos = event->position();
     last_mouse_screen_ = {pos.x(), pos.y()};
     const core::Vec2d current_world = screen_to_world(last_mouse_screen_);
@@ -4334,8 +4340,11 @@ void CanvasWidget::dragLeaveEvent(QDragLeaveEvent* event) {
 }
 
 void CanvasWidget::dropEvent(QDropEvent* event) {
-  if (event->mimeData()->hasFormat("application/x-vector-stencil")) {
-    const QByteArray bytes = event->mimeData()->data("application/x-vector-stencil");
+  if (event->mimeData()->hasFormat("application/x-madi-stencil") ||
+      event->mimeData()->hasFormat("application/x-vector-stencil")) {
+    const QByteArray bytes = event->mimeData()->hasFormat("application/x-madi-stencil")
+        ? event->mimeData()->data("application/x-madi-stencil")
+        : event->mimeData()->data("application/x-vector-stencil");
     ShapePlacementTemplate tmpl = drag_template_;
     deserialize_placement_template(bytes, tmpl);
 
@@ -4443,6 +4452,8 @@ void CanvasWidget::start_canvas_drag_to_palette() {
 
   const QByteArray item_data = serialize_placement_template(tmpl);
   auto* mime = new QMimeData();
+  mime->setData("application/x-madi-stencil", item_data);
+  mime->setData("application/x-madi-diagram-shape", item_data);
   mime->setData("application/x-vector-stencil", item_data);
   mime->setData("application/x-vector-diagram-shape", item_data);
   mime->setText(QString::fromStdString(tmpl.name));

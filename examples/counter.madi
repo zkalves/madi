@@ -1,0 +1,87 @@
+# Madí Diagram Model - Model, Align & Diagram Interconnects
+# Homage to Arte Madí (Buenos Aires, 1946) — Broken Canvas, Linear Grids & Articulated Spatial Structures
+schema_version: 1
+nodes:
+  - id: 1
+    name: "Clock & Reset Gen"
+    shape: 0
+    bounds: [60.0000, 100.0000, 160.0000, 80.0000]
+    ports:
+      - id: 11
+        name: "clk"
+        side: 1
+        offset_pct: 0.3500
+      - id: 12
+        name: "rst_n"
+        side: 1
+        offset_pct: 0.6500
+  - id: 2
+    name: "4-Bit Counter Core"
+    shape: 3
+    bounds: [300.0000, 80.0000, 200.0000, 140.0000]
+    properties:
+      subsystem_type: "builtin"
+      embedded_graph_yaml: "# Madí Subsystem Internal Diagram\nschema_version: 1\nnodes:\n  - id: 10\n    name: \"Increment Logic\"\n    shape: 0\n    bounds: [80.0, 60.0, 140.0, 70.0]\n  - id: 20\n    name: \"DFF Register [3:0]\"\n    shape: 0\n    bounds: [300.0, 60.0, 150.0, 70.0]\nedges:\n  - id: 101\n    source_node: 10\n    target_node: 20\n    arrowhead: \"classic\"\n    waypoints:\n      - [220.0, 95.0]\n      - [300.0, 95.0]\n"
+    ports:
+      - id: 21
+        name: "clk"
+        side: 3
+        offset_pct: 0.3500
+      - id: 22
+        name: "rst_n"
+        side: 3
+        offset_pct: 0.6500
+      - id: 23
+        name: "q_out[3:0]"
+        side: 1
+        offset_pct: 0.5000
+  - id: 3
+    name: "7-Segment Decoder"
+    shape: 0
+    bounds: [580.0000, 100.0000, 180.0000, 90.0000]
+    ports:
+      - id: 31
+        name: "data_in[3:0]"
+        side: 3
+        offset_pct: 0.5000
+      - id: 32
+        name: "seg_out[6:0]"
+        side: 1
+        offset_pct: 0.5000
+edges:
+  - id: 1001
+    source_node: 1
+    source_port: 11
+    target_node: 2
+    target_port: 21
+    routing_style: 1
+    arrowhead: "classic"
+    waypoints:
+      - [220.0000, 128.0000]
+      - [260.0000, 128.0000]
+      - [260.0000, 129.0000]
+      - [300.0000, 129.0000]
+  - id: 1002
+    source_node: 1
+    source_port: 12
+    target_node: 2
+    target_port: 22
+    routing_style: 1
+    arrowhead: "classic"
+    waypoints:
+      - [220.0000, 152.0000]
+      - [260.0000, 152.0000]
+      - [260.0000, 171.0000]
+      - [300.0000, 171.0000]
+  - id: 1003
+    source_node: 2
+    source_port: 23
+    target_node: 3
+    target_port: 31
+    routing_style: 1
+    arrowhead: "classic"
+    waypoints:
+      - [500.0000, 150.0000]
+      - [540.0000, 150.0000]
+      - [540.0000, 145.0000]
+      - [580.0000, 145.0000]

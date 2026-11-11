@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(vector
+project(madi
   VERSION 0.1.0
-  DESCRIPTION "Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing"
+  DESCRIPTION "Model, Align & Diagram Interconnects"
   LANGUAGES CXX C
 )
 
@@ -53,60 +53,68 @@ find_library(OGDF_LIBRARY NAMES OGDF)
 find_path(OGDF_INCLUDE_DIR NAMES ogdf/basic/Graph.h)
 
 file(GLOB_RECURSE CORE_SOURCES CONFIGURE_DEPENDS "src/core/*.cpp")
-add_library(vector-core STATIC ${CORE_SOURCES})
-target_include_directories(vector-core PUBLIC
+add_library(madi-core STATIC ${CORE_SOURCES})
+add_library(vector-core ALIAS madi-core)
+target_include_directories(madi-core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_link_libraries(vector-core PUBLIC
+target_link_libraries(madi-core PUBLIC
   Threads::Threads
 )
 
 file(GLOB_RECURSE ROUTING_SOURCES CONFIGURE_DEPENDS "src/routing/*.cpp")
-add_library(vector-routing STATIC ${ROUTING_SOURCES})
-target_include_directories(vector-routing PUBLIC
+add_library(madi-routing STATIC ${ROUTING_SOURCES})
+add_library(vector-routing ALIAS madi-routing)
+target_include_directories(madi-routing PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
-target_link_libraries(vector-routing PUBLIC
-  vector-core
+target_link_libraries(madi-routing PUBLIC
+  madi-core
   Threads::Threads
 )
 if(AVOID_LIBRARY AND AVOID_INCLUDE_DIR)
-  target_include_directories(vector-routing PUBLIC ${AVOID_INCLUDE_DIR})
-  target_link_libraries(vector-routing PUBLIC ${AVOID_LIBRARY})
-  target_compile_definitions(vector-routing PUBLIC VECTOR_HAS_LIBAVOID=1)
+  target_include_directories(madi-routing PUBLIC ${AVOID_INCLUDE_DIR})
+  target_link_libraries(madi-routing PUBLIC ${AVOID_LIBRARY})
+  target_compile_definitions(madi-routing PUBLIC VECTOR_HAS_LIBAVOID=1 MADI_HAS_LIBAVOID=1)
 endif()
 if(OGDF_LIBRARY AND OGDF_INCLUDE_DIR)
-  target_include_directories(vector-routing PUBLIC ${OGDF_INCLUDE_DIR})
-  target_link_libraries(vector-routing PUBLIC ${OGDF_LIBRARY})
-  target_compile_definitions(vector-routing PUBLIC VECTOR_HAS_OGDF=1)
+  target_include_directories(madi-routing PUBLIC ${OGDF_INCLUDE_DIR})
+  target_link_libraries(madi-routing PUBLIC ${OGDF_LIBRARY})
+  target_compile_definitions(madi-routing PUBLIC VECTOR_HAS_OGDF=1 MADI_HAS_OGDF=1)
 endif()
 
 # --- Storage / IO ---
 file(GLOB_RECURSE IO_SOURCES CONFIGURE_DEPENDS "src/io/*.cpp")
-add_library(vector-io STATIC ${IO_SOURCES})
-target_include_directories(vector-io PUBLIC
+add_library(madi-io STATIC ${IO_SOURCES})
+add_library(vector-io ALIAS madi-io)
+target_include_directories(madi-io PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
-target_link_libraries(vector-io PUBLIC
-  vector-core
+target_link_libraries(madi-io PUBLIC
+  madi-core
   ZLIB::ZLIB
 )
 if(pugixml_FOUND)
-  target_link_libraries(vector-io PUBLIC pugixml::pugixml)
+  target_link_libraries(madi-io PUBLIC pugixml::pugixml)
 endif()
 
 # --- Command Line Interface ---
-add_executable(vector-cli src/app/main_cli.cpp)
-target_include_directories(vector-cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(vector-cli PRIVATE
-  vector-core
-  vector-routing
-  vector-io
+add_executable(madi src/app/main_cli.cpp)
+target_include_directories(madi PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(madi PRIVATE
+  madi-core
+  madi-routing
+  madi-io
 )
+add_custom_command(TARGET madi POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE_NAME:madi> $<TARGET_FILE_DIR:madi>/vector-cli
+  COMMENT "Creating vector-cli symlink -> madi"
+)
+add_custom_target(vector-cli DEPENDS madi)
 
 if(Qt6_FOUND)
-  message(STATUS "Qt6 found (${Qt6_VERSION}) - vector-gui target enabled")
+  message(STATUS "Qt6 found (${Qt6_VERSION}) - madi-gui target enabled")
   file(GLOB_RECURSE GUI_SOURCES CONFIGURE_DEPENDS
     "src/gui/*.cpp"
     "src/renderer/*.cpp"
@@ -121,22 +129,25 @@ if(Qt6_FOUND)
     list(APPEND GUI_EXTRA_SOURCES "${GUI_RESOURCES}")
   endif()
   if(WIN32)
-    set(WINDOWS_RC_FILE "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/vector.rc")
+    set(WINDOWS_RC_FILE "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/madi.rc")
+    if(NOT EXISTS "${WINDOWS_RC_FILE}")
+      set(WINDOWS_RC_FILE "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/vector.rc")
+    endif()
     if(EXISTS "${WINDOWS_RC_FILE}")
       list(APPEND GUI_EXTRA_SOURCES "${WINDOWS_RC_FILE}")
     endif()
-    add_executable(vector-gui WIN32 ${GUI_SOURCES} ${GUI_EXTRA_SOURCES})
+    add_executable(madi-gui WIN32 ${GUI_SOURCES} ${GUI_EXTRA_SOURCES})
   else()
-    add_executable(vector-gui ${GUI_SOURCES} ${GUI_EXTRA_SOURCES})
+    add_executable(madi-gui ${GUI_SOURCES} ${GUI_EXTRA_SOURCES})
   endif()
-  target_compile_definitions(vector-gui PRIVATE VECTOR_ENABLE_QT=1)
-  target_include_directories(vector-gui PRIVATE
+  target_compile_definitions(madi-gui PRIVATE VECTOR_ENABLE_QT=1 MADI_ENABLE_QT=1)
+  target_include_directories(madi-gui PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
   )
-  target_link_libraries(vector-gui PRIVATE
-    vector-core
-    vector-routing
-    vector-io
+  target_link_libraries(madi-gui PRIVATE
+    madi-core
+    madi-routing
+    madi-io
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
@@ -144,29 +155,34 @@ if(Qt6_FOUND)
     Qt6::Sql
   )
   if(TARGET Qt6::Svg)
-    target_link_libraries(vector-gui PRIVATE Qt6::Svg)
+    target_link_libraries(madi-gui PRIVATE Qt6::Svg)
   endif()
   if(SKIA_LIBRARY AND SKIA_INCLUDE_DIR)
-    target_include_directories(vector-gui PRIVATE ${SKIA_INCLUDE_DIR})
-    target_link_libraries(vector-gui PRIVATE ${SKIA_LIBRARY})
-    target_compile_definitions(vector-gui PRIVATE VECTOR_HAS_SKIA=1)
+    target_include_directories(madi-gui PRIVATE ${SKIA_INCLUDE_DIR})
+    target_link_libraries(madi-gui PRIVATE ${SKIA_LIBRARY})
+    target_compile_definitions(madi-gui PRIVATE VECTOR_HAS_SKIA=1 MADI_HAS_SKIA=1)
   endif()
+  add_custom_command(TARGET madi-gui POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE_NAME:madi-gui> $<TARGET_FILE_DIR:madi-gui>/vector-gui
+    COMMENT "Creating vector-gui symlink -> madi-gui"
+  )
+  add_custom_target(vector-gui DEPENDS madi-gui)
 else()
-  message(STATUS "Qt6 not found - vector-gui target disabled")
+  message(STATUS "Qt6 not found - madi-gui target disabled")
 endif()
 
 enable_testing()
 
 add_executable(CoreSmokeTest tests/core/CoreSmokeTest.cpp)
-target_link_libraries(CoreSmokeTest PRIVATE vector-core)
+target_link_libraries(CoreSmokeTest PRIVATE madi-core)
 add_test(NAME CoreSmokeTest COMMAND CoreSmokeTest)
 
 add_executable(RoutingSmokeTest tests/routing/RoutingSmokeTest.cpp)
-target_link_libraries(RoutingSmokeTest PRIVATE vector-routing)
+target_link_libraries(RoutingSmokeTest PRIVATE madi-routing)
 add_test(NAME RoutingSmokeTest COMMAND RoutingSmokeTest)
 
 add_executable(IoSmokeTest tests/io/IoSmokeTest.cpp)
-target_link_libraries(IoSmokeTest PRIVATE vector-io)
+target_link_libraries(IoSmokeTest PRIVATE madi-io)
 add_test(NAME IoSmokeTest COMMAND IoSmokeTest)
 
 if(Qt6_FOUND)
@@ -188,12 +204,12 @@ if(Qt6_FOUND)
     include/vector/renderer/CanvasWidget.hpp
     res/resources.qrc
   )
-  target_compile_definitions(ThemeSmokeTest PRIVATE VECTOR_ENABLE_QT=1)
+  target_compile_definitions(ThemeSmokeTest PRIVATE VECTOR_ENABLE_QT=1 MADI_ENABLE_QT=1)
   target_include_directories(ThemeSmokeTest PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
   target_link_libraries(ThemeSmokeTest PRIVATE
-    vector-core
-    vector-routing
-    vector-io
+    madi-core
+    madi-routing
+    madi-io
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
@@ -209,7 +225,10 @@ include(GNUInstallDirs)
 
 find_program(RSVG_CONVERT rsvg-convert)
 find_program(IMAGE_CONVERT convert)
-set(CANONICAL_ICON_SVG "${CMAKE_CURRENT_SOURCE_DIR}/res/icons/vector.svg")
+set(CANONICAL_ICON_SVG "${CMAKE_CURRENT_SOURCE_DIR}/res/icons/madi.svg")
+if(NOT EXISTS "${CANONICAL_ICON_SVG}")
+  set(CANONICAL_ICON_SVG "${CMAKE_CURRENT_SOURCE_DIR}/res/icons/vector.svg")
+endif()
 if(NOT EXISTS "${CANONICAL_ICON_SVG}")
   set(CANONICAL_ICON_SVG "${CMAKE_CURRENT_SOURCE_DIR}/packaging/icons/vector.svg")
 endif()
@@ -217,14 +236,15 @@ if(RSVG_CONVERT AND IMAGE_CONVERT)
   set(ICON_SIZES 16 32 48 64 128 256 512)
   set(GENERATED_PNGS "")
   foreach(sz ${ICON_SIZES})
-    set(PNG_OUT "${CMAKE_CURRENT_BINARY_DIR}/icons/${sz}x${sz}/vector.png")
+    set(PNG_OUT "${CMAKE_CURRENT_BINARY_DIR}/icons/${sz}x${sz}/madi.png")
     list(APPEND GENERATED_PNGS "${PNG_OUT}")
     add_custom_command(
       OUTPUT "${PNG_OUT}"
       COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/icons/${sz}x${sz}"
       COMMAND ${RSVG_CONVERT} -w ${sz} -h ${sz} "${CANONICAL_ICON_SVG}" -o "${PNG_OUT}"
+      COMMAND ${CMAKE_COMMAND} -E create_symlink madi.png "${CMAKE_CURRENT_BINARY_DIR}/icons/${sz}x${sz}/vector.png"
       DEPENDS "${CANONICAL_ICON_SVG}"
-      COMMENT "Rendering vector.png (${sz}x${sz})"
+      COMMENT "Rendering madi.png (${sz}x${sz})"
     )
     install(FILES "${PNG_OUT}"
       DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${sz}x${sz}/apps"
@@ -237,12 +257,12 @@ endif()
 # ==============================================================================
 # Installation Rules
 # ==============================================================================
-install(TARGETS vector-cli
+install(TARGETS madi
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-if(TARGET vector-gui)
-  install(TARGETS vector-gui
+if(TARGET madi-gui)
+  install(TARGETS madi-gui
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     BUNDLE DESTINATION .
   )
@@ -250,62 +270,79 @@ endif()
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/res/themes/")
   install(DIRECTORY res/themes/
-    DESTINATION ${CMAKE_INSTALL_DATADIR}/vector/themes
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/madi/themes
     FILES_MATCHING PATTERN "*.json"
   )
 elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/themes/")
   install(DIRECTORY themes/
-    DESTINATION ${CMAKE_INSTALL_DATADIR}/vector/themes
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/madi/themes
     FILES_MATCHING PATTERN "*.json"
   )
 endif()
 
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/vector.desktop")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/madi.desktop")
+  install(FILES packaging/madi.desktop
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/applications
+  )
+elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/vector.desktop")
   install(FILES packaging/vector.desktop
     DESTINATION ${CMAKE_INSTALL_DATADIR}/applications
   )
 endif()
 
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/vector.appdata.xml")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/madi.appdata.xml")
+  install(FILES packaging/madi.appdata.xml
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo
+  )
+elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/vector.appdata.xml")
   install(FILES packaging/vector.appdata.xml
     DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo
   )
 endif()
 
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/res/icons/vector.svg")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/res/icons/madi.svg")
+  install(FILES res/icons/madi.svg
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
+    RENAME madi.svg
+  )
+elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/res/icons/vector.svg")
   install(FILES res/icons/vector.svg
     DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
-    RENAME vector.svg
+    RENAME madi.svg
   )
 elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/icons/vector.svg")
   install(FILES packaging/icons/vector.svg
     DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
+    RENAME madi.svg
   )
 endif()
 
 # ==============================================================================
 # CPack Packaging Configuration (DEB, RPM, TGZ, NSIS, ZIP)
 # ==============================================================================
-set(CPACK_PACKAGE_NAME "vector")
-set(CPACK_PACKAGE_VENDOR "VECTOR Contributors")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing")
+set(CPACK_PACKAGE_NAME "madi")
+set(CPACK_PACKAGE_VENDOR "Madí Contributors")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Model, Align & Diagram Interconnects - Homage to Arte Madí (1946)")
 set(CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
 set(CPACK_PACKAGE_VERSION_MINOR ${PROJECT_VERSION_MINOR})
 set(CPACK_PACKAGE_VERSION_PATCH ${PROJECT_VERSION_PATCH})
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
-set(CPACK_PACKAGE_CONTACT "vector-dev@example.org")
+set(CPACK_PACKAGE_CONTACT "madi-dev@example.org")
 set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/vector/vector")
 
 # Multi-platform generators
 if(WIN32)
   set(CPACK_GENERATOR "ZIP;NSIS")
-  set(CPACK_NSIS_DISPLAY_NAME "VECTOR Diagram Editor")
-  set(CPACK_NSIS_PACKAGE_NAME "VECTOR")
+  set(CPACK_NSIS_DISPLAY_NAME "Madí Diagram Editor")
+  set(CPACK_NSIS_PACKAGE_NAME "Madí")
   set(CPACK_NSIS_MODIFY_PATH ON)
   set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
-  set(CPACK_NSIS_MUI_FINISHPAGE_RUN "vector-gui.exe")
-  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/icons/vector.ico")
+  set(CPACK_NSIS_MUI_FINISHPAGE_RUN "madi-gui.exe")
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/icons/madi.ico")
+    set(CPACK_NSIS_MUI_ICON "${CMAKE_CURRENT_SOURCE_DIR}/packaging/icons/madi.ico")
+    set(CPACK_NSIS_MUI_UNIICON "${CMAKE_CURRENT_SOURCE_DIR}/packaging/icons/madi.ico")
+  elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/icons/vector.ico")
     set(CPACK_NSIS_MUI_ICON "${CMAKE_CURRENT_SOURCE_DIR}/packaging/icons/vector.ico")
     set(CPACK_NSIS_MUI_UNIICON "${CMAKE_CURRENT_SOURCE_DIR}/packaging/icons/vector.ico")
   endif()
@@ -314,7 +351,7 @@ else()
 endif()
 
 # Debian (.deb)
-set(CPACK_DEBIAN_PACKAGE_MAINTAINER "VECTOR Team <vector-dev@example.org>")
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Madí Team <madi-dev@example.org>")
 set(CPACK_DEBIAN_PACKAGE_SECTION "graphics")
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "qt6-wayland, xdg-utils")

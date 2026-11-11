@@ -1,9 +1,11 @@
-# VECTOR - Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing
-# Copyright (C) 2026 VECTOR Contributors
+# Madí - Model, Align & Diagram Interconnects
+# Homage to Arte Madí (Buenos Aires, 1946) — Broken Canvas, Linear Grids & Articulated Spatial Structures
+# Copyright (C) 2026 Madí Contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 .DEFAULT_GOAL := help
-.PHONY: help configure all lib libs core routing io gui cli run-gui \
+.PHONY: help configure all lib libs core routing io gui cli run-gui run \
+        madi madi-gui \
         test smoke-test test-core test-routing test-io test-gui test-themes \
         clean distclean install format format-check tidy lint check \
         tidy-core tidy-routing tidy-io tidy-gui \
@@ -21,7 +23,7 @@ CMAKE_FLAGS   ?=
 
 help: ## Display this list of available targets (default)
 	@echo "=========================================================================="
-	@echo "  VECTOR: Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing"
+	@echo "  Madí: Model, Align & Diagram Interconnects (Homage to Arte Madí 1946)"
 	@echo "=========================================================================="
 	@echo ""
 	@echo "Usage: make [target] [BUILD_DIR=path] [BUILD_TYPE=Release|Debug]"
@@ -47,34 +49,40 @@ configure: ## Configure the CMake project in $(BUILD_DIR)
 all: configure ## Build all targets (libraries, GUI application, and test suite)
 	$(CMAKE) --build $(BUILD_DIR) -j$(JOBS)
 
-lib: configure ## Build all domain libraries (vector-core, vector-routing, vector-io)
-	$(CMAKE) --build $(BUILD_DIR) --target vector-core vector-routing vector-io -j$(JOBS)
+lib: configure ## Build all domain libraries (madi-core, madi-routing, madi-io)
+	$(CMAKE) --build $(BUILD_DIR) --target madi-core madi-routing madi-io -j$(JOBS)
 
 libs: lib ## Alias for lib
 
-core: configure ## Build Phase 1 domain library (vector-core)
-	$(CMAKE) --build $(BUILD_DIR) --target vector-core -j$(JOBS)
+core: configure ## Build Phase 1 domain library (madi-core)
+	$(CMAKE) --build $(BUILD_DIR) --target madi-core -j$(JOBS)
 
-routing: configure ## Build Phase 2 wire physics & snapping library (vector-routing)
-	$(CMAKE) --build $(BUILD_DIR) --target vector-routing -j$(JOBS)
+routing: configure ## Build Phase 2 wire physics & snapping library (madi-routing)
+	$(CMAKE) --build $(BUILD_DIR) --target madi-routing -j$(JOBS)
 
-io: configure ## Build Phase 3 persistence & Draw.io interop library (vector-io)
-	$(CMAKE) --build $(BUILD_DIR) --target vector-io -j$(JOBS)
+io: configure ## Build Phase 3 persistence & Draw.io interop library (madi-io)
+	$(CMAKE) --build $(BUILD_DIR) --target madi-io -j$(JOBS)
 
-gui: configure ## Build Phase 4 vector-gui Qt6 desktop application
-	@if ! $(CMAKE) --build $(BUILD_DIR) --target vector-gui -j$(JOBS); then \
+gui: configure ## Build Phase 4 madi-gui Qt6 desktop application
+	@if ! $(CMAKE) --build $(BUILD_DIR) --target madi-gui -j$(JOBS); then \
 		echo ""; \
-		echo "ERROR: Target 'vector-gui' failed to build."; \
+		echo "ERROR: Target 'madi-gui' failed to build."; \
 		echo "Ensure Qt 6 development libraries are installed:"; \
 		echo "  sudo apt-get install qt6-base-dev qt6-svg-dev libgl-dev"; \
 		exit 1; \
 	fi
 
-run-gui: gui ## Build and launch the vector-gui application
-	@"$(BUILD_DIR)/vector-gui"
+madi-gui: gui ## Alias for gui
 
-cli: configure ## Build vector-cli command-line executable (if target configured)
-	$(CMAKE) --build $(BUILD_DIR) --target vector-cli -j$(JOBS)
+run-gui: gui ## Build and launch the madi-gui application
+	@"$(BUILD_DIR)/madi-gui"
+
+run: run-gui ## Alias for run-gui
+
+cli: configure ## Build madi command-line executable
+	$(CMAKE) --build $(BUILD_DIR) --target madi -j$(JOBS)
+
+madi: cli ## Alias for cli
 
 test: configure ## Build and execute test suite via CTest
 	$(CMAKE) --build $(BUILD_DIR) --target CoreSmokeTest RoutingSmokeTest IoSmokeTest ThemeSmokeTest -j$(JOBS)
@@ -93,13 +101,15 @@ test-io: configure ## Build and execute Phase 3 IoSmokeTest
 	$(CTEST) --test-dir $(BUILD_DIR) -R "^IoSmokeTest$$" --output-on-failure
 
 test-gui: configure ## Run Qt6 GUI self-test in offscreen mode
-	$(CMAKE) --build $(BUILD_DIR) --target vector-gui -j$(JOBS)
-	@if [ -x "$(BUILD_DIR)/vector-gui" ]; then \
+	$(CMAKE) --build $(BUILD_DIR) --target madi-gui -j$(JOBS)
+	@if [ -x "$(BUILD_DIR)/madi-gui" ]; then \
+		QT_QPA_PLATFORM=offscreen "$(BUILD_DIR)/madi-gui" --self-test; \
+	elif [ -x "$(BUILD_DIR)/bin/madi-gui" ]; then \
+		QT_QPA_PLATFORM=offscreen "$(BUILD_DIR)/bin/madi-gui" --self-test; \
+	elif [ -x "$(BUILD_DIR)/vector-gui" ]; then \
 		QT_QPA_PLATFORM=offscreen "$(BUILD_DIR)/vector-gui" --self-test; \
-	elif [ -x "$(BUILD_DIR)/bin/vector-gui" ]; then \
-		QT_QPA_PLATFORM=offscreen "$(BUILD_DIR)/bin/vector-gui" --self-test; \
 	else \
-		find $(BUILD_DIR) -name "vector-gui" -type f -executable -exec env QT_QPA_PLATFORM=offscreen {} --self-test \; ; \
+		find $(BUILD_DIR) -name "madi-gui" -type f -executable -exec env QT_QPA_PLATFORM=offscreen {} --self-test \; ; \
 	fi
 
 test-themes: configure ## Build and execute ThemeSmokeTest
@@ -194,7 +204,7 @@ appimage: ## Build standalone Linux AppImage bundle
 	./packaging/appimage/build-appimage.sh
 
 docker: ## Build multi-stage OCI container image with Docker
-	docker build -t vector:latest -f packaging/docker/Dockerfile .
+	docker build -t madi:latest -t vector:latest -f packaging/docker/Dockerfile .
 
 podman: ## Build multi-stage OCI container image with Podman
-	podman build -t vector:latest -f packaging/docker/Dockerfile .
+	podman build -t madi:latest -t vector:latest -f packaging/docker/Dockerfile .

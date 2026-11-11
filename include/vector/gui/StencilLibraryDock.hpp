@@ -783,7 +783,7 @@ private:
                      IconFactory::IconType::BidirectionalPort, "Bidirectional I/O interface port", true);
     add_stencil_item(cat_ports, "Built-in Subsystem (Embedded)", StencilItemType::SubsystemBuiltin, 0,
                      IconFactory::IconType::SubsystemBlock, "Hierarchical subsystem block embedded in current diagram (H)", true);
-    add_stencil_item(cat_ports, "External File Subsystem (.yaml)", StencilItemType::SubsystemFile, 0,
+    add_stencil_item(cat_ports, "External File Subsystem (.madi)", StencilItemType::SubsystemFile, 0,
                      IconFactory::IconType::SubsystemFile, "Hierarchical subsystem linked to an external file", true);
 
     // 4. Connectors & Routing Category
@@ -1212,6 +1212,8 @@ inline void StencilTreeWidget::mouseMoveEvent(QMouseEvent* event) {
   }
 
   auto* mime = new QMimeData();
+  mime->setData("application/x-madi-stencil", item_data);
+  mime->setData("application/x-madi-diagram-shape", item_data);
   mime->setData("application/x-vector-stencil", item_data);
   mime->setData("application/x-vector-diagram-shape", item_data);
   mime->setText(title);
@@ -1228,7 +1230,9 @@ inline void StencilTreeWidget::mouseMoveEvent(QMouseEvent* event) {
 }
 
 inline void StencilTreeWidget::dragEnterEvent(QDragEnterEvent* event) {
-  if (event->mimeData()->hasFormat("application/x-vector-stencil") ||
+  if (event->mimeData()->hasFormat("application/x-madi-stencil") ||
+      event->mimeData()->hasFormat("application/x-madi-diagram-shape") ||
+      event->mimeData()->hasFormat("application/x-vector-stencil") ||
       event->mimeData()->hasFormat("application/x-vector-diagram-shape") ||
       event->mimeData()->hasText()) {
     event->acceptProposedAction();
@@ -1238,7 +1242,9 @@ inline void StencilTreeWidget::dragEnterEvent(QDragEnterEvent* event) {
 }
 
 inline void StencilTreeWidget::dragMoveEvent(QDragMoveEvent* event) {
-  if (event->mimeData()->hasFormat("application/x-vector-stencil") ||
+  if (event->mimeData()->hasFormat("application/x-madi-stencil") ||
+      event->mimeData()->hasFormat("application/x-madi-diagram-shape") ||
+      event->mimeData()->hasFormat("application/x-vector-stencil") ||
       event->mimeData()->hasFormat("application/x-vector-diagram-shape") ||
       event->mimeData()->hasText()) {
     event->acceptProposedAction();
@@ -1248,11 +1254,17 @@ inline void StencilTreeWidget::dragMoveEvent(QDragMoveEvent* event) {
 }
 
 inline void StencilTreeWidget::dropEvent(QDropEvent* event) {
-  if (event->mimeData()->hasFormat("application/x-vector-stencil") ||
+  if (event->mimeData()->hasFormat("application/x-madi-stencil") ||
+      event->mimeData()->hasFormat("application/x-madi-diagram-shape") ||
+      event->mimeData()->hasFormat("application/x-vector-stencil") ||
       event->mimeData()->hasFormat("application/x-vector-diagram-shape")) {
-    const QByteArray bytes = event->mimeData()->hasFormat("application/x-vector-stencil")
-        ? event->mimeData()->data("application/x-vector-stencil")
-        : event->mimeData()->data("application/x-vector-diagram-shape");
+    const QByteArray bytes = event->mimeData()->hasFormat("application/x-madi-stencil")
+        ? event->mimeData()->data("application/x-madi-stencil")
+        : (event->mimeData()->hasFormat("application/x-madi-diagram-shape")
+            ? event->mimeData()->data("application/x-madi-diagram-shape")
+            : (event->mimeData()->hasFormat("application/x-vector-stencil")
+                ? event->mimeData()->data("application/x-vector-stencil")
+                : event->mimeData()->data("application/x-vector-diagram-shape")));
     renderer::ShapePlacementTemplate tmpl;
     if (renderer::deserialize_placement_template(bytes, tmpl)) {
       auto* target = itemAt(event->position().toPoint());

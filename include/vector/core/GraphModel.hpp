@@ -981,4 +981,6 @@ private:
 
 }  // namespace vector::core
 
+namespace madi = vector;
+
 #endif  // VECTOR_CORE_GRAPH_MODEL_HPP

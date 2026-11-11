@@ -59,4 +59,6 @@ public:
 
 }  // namespace vector::io
 
+namespace madi = vector;
+
 #endif  // VECTOR_IO_STORAGE_ENGINE_HPP

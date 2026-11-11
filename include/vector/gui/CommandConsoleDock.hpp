@@ -237,7 +237,7 @@ public:
 
 private:
   void print_welcome_banner() {
-    history_view_->append("<span style='color: #A78BFA;'><b>VECTOR Command Console</b></span>");
+    history_view_->append("<span style='color: #A78BFA;'><b>Madí Command Console</b></span>");
     history_view_->append("<span style='color: #94A3B8;'>Type <b>help</b> for command reference. Supports <i>line, rect, poly, block, down, up, move, delete, zoom</i>.</span>");
     history_view_->append("<span style='color: #64748B;'>Coordinates support absolute <b>x,y</b> and relative <b>@dx,dy</b> (e.g. <i>line 100,100 @150,0</i>).</span>");
   }

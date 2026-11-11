@@ -1,7 +1,8 @@
-# VECTOR: Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing
+# Madí: Model, Align & Diagram Interconnects
 ## Core Architecture Specification & System Design Manual
 
-**Project Name:** VECTOR (`libvector`, `vector-gui`, `vector-cli`)  
+**Project Name:** Madí (`madi-core`, `madi-routing`, `madi-io`, `madi-gui`, `madi`)  
+**Homage:** Arte Madí (Buenos Aires, 1946) — Broken Canvas (*marco recortado*), Grids & Articulated Spatial Structures  
 **License:** GNU General Public License v3 (GPLv3)  
 **Language Standard:** Modern ISO C++20 (`std::jthread`, concepts, ranges, designated initializers)  
 **Target Platform:** Linux (X11 & Wayland), POSIX-compliant  
@@ -11,13 +12,14 @@
 
 ## 1. Executive Summary & Design Philosophy
 
-VECTOR is an open-source, high-performance 2D diagramming and schematic engine engineered to scale smoothly to massive networks (10,000 to 100,000+ nodes and edges). It provides native support for hierarchical blocks, sub-sheet instantiations, asynchronous obstacle-avoiding routing, dual-backend hardware/software rendering, and transactional editing.
+**Madí** (/mah-DEE/) is an open-source, high-performance 2D diagramming and schematic engine engineered to scale smoothly to massive networks (10,000 to 100,000+ nodes and edges). It honors the 1946 Buenos Aires **Arte Madí** movement through its freeform polygonal canvas (*marco recortado*), linear grids, and articulated hierarchical structures. It provides native support for hierarchical blocks, sub-sheet instantiations, asynchronous obstacle-avoiding routing, dual-backend hardware/software rendering, and transactional editing.
 
 ### Key Tenets
-1. **Zero-Coupling Core Domain**: The core domain layer (`vector::core`) has zero dependencies outside the C++20 standard library. Core geometry, topology, spatial indexing, and transactional history are decoupled from Qt, Skia, and OS-specific windowing systems.
+1. **Zero-Coupling Core Domain**: The core domain layer (`madi::core` / `vector::core`) has zero dependencies outside the C++20 standard library. Core geometry, topology, spatial indexing, and transactional history are decoupled from Qt, Skia, and OS-specific windowing systems.
 2. **Double-Precision World Space**: All canvas coordinates are stored as 64-bit IEEE 754 `double` values to ensure sub-millimeter precision across extreme zoom ranges ($10^{-5}$ to $10^{5}$) without spatial jitter or floating-point rounding degradation.
 3. **Viewport Isolation & Spatial Culling**: Complex sub-diagrams and child graphs are encapsulated within opaque bounding polygons in parent viewports. Only visible elements within the active frustum are processed and rasterized.
 4. **Asynchronous Non-Blocking Workers**: CPU-intensive algorithms (dynamic obstacle avoidance via `libavoid`, graph auto-layout via OGDF, spatial SQLite caching) run on detached background worker threads (`std::jthread`) to guarantee an uninterrupted 60/144 FPS UI experience.
+5. **Deterministic Storage (.madi)**: Human-readable line-oriented YAML format specifically formatted for minimal, conflict-free Git diffs.
 
 ---
 

@@ -1,5 +1,6 @@
-// VECTOR - Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing
-// Copyright (C) 2026 VECTOR Contributors
+// Madí CLI - Model, Align & Diagram Interconnects
+// Homage to Arte Madí (Buenos Aires, 1946) — Broken Canvas, Linear Grids & Articulated Spatial Structures
+// Copyright (C) 2026 Madí Contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "vector/core/Geometry.hpp"
@@ -19,13 +20,14 @@
 namespace {
 
 void print_help(std::string_view prog_name) {
-  std::cout << "VECTOR CLI - Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing\n";
+  std::cout << "Madí CLI - Model, Align & Diagram Interconnects\n";
+  std::cout << "Homage to Arte Madí (Buenos Aires, 1946) — marco recortado, geometric grids & articulated structures\n\n";
   std::cout << "Usage: " << prog_name << " [options] [arguments]\n\n";
   std::cout << "Options:\n";
   std::cout << "  -h, --help                 Show this help message\n";
   std::cout << "  -v, --version              Display engine version\n";
-  std::cout << "  --stats <file>             Inspect and display diagram statistics\n";
-  std::cout << "  --convert <in> <out>       Convert diagram between Draw.io XML and YAML\n";
+  std::cout << "  --stats <file>             Inspect and display diagram statistics (.madi, .yaml, .drawio)\n";
+  std::cout << "  --convert <in> <out>       Convert diagram format (e.g. diagram.drawio -> diagram.madi)\n";
   std::cout << "  --route <in> <out>         Re-route all nets using obstacle avoidance engine\n";
   std::cout << "  --export-svg <in> <out>    Export diagram directly to SVG vector image\n";
 }
@@ -161,7 +163,8 @@ int main(int argc, char* argv[]) {
     print_help(argv[0]);
     return 0;
   } else if (arg1 == "-v" || arg1 == "--version") {
-    std::cout << "VECTOR Engine version 1.0.0-alpha (C++20)\n";
+    std::cout << "Madí Engine version 1.0.0-alpha (C++20)\n";
+    std::cout << "Model, Align & Diagram Interconnects\n";
     std::cout << "Licensed under GNU GPLv3\n";
     return 0;
   } else if (arg1 == "--stats" && argc >= 3) {
@@ -173,7 +176,7 @@ int main(int argc, char* argv[]) {
       return 1;
     }
     const auto bbox = model.get_bounding_box();
-    std::cout << "=== VECTOR Diagram Statistics ===\n";
+    std::cout << "=== Madí Diagram Statistics ===\n";
     std::cout << "File:   " << file_path << "\n";
     std::cout << "Nodes:  " << model.node_count() << "\n";
     std::cout << "Edges:  " << model.edge_count() << "\n";
