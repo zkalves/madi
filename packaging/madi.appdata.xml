@@ -16,7 +16,7 @@
       <li>Hierarchical multi-level schematics with drill-down and symbol generation</li>
       <li>Comprehensive shape stencil library with Boolean geometry operations and parametric controls</li>
       <li>Customizable themes with high-contrast, dark, and light modes</li>
-      <li>Deterministic line-oriented YAML (.madi) serialization and bidirectional Draw.io XML</li>
+      <li>Standard RFC 8259 JSON (.madi) serialization with JSONC comment support and bidirectional Draw.io XML</li>
     </ul>
   </description>
   <launchable type="desktop-id">madi.desktop</launchable>

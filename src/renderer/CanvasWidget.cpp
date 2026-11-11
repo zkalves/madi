@@ -2097,16 +2097,22 @@ core::GraphModel* CanvasWidget::ensure_subsystem_graph(core::NodeId nid) {
         }
       } else {
         io::StorageEngine storage;
-        if (storage.deserialize_yaml(content, *child_graph).success) {
+        if (storage.deserialize(content, *child_graph).success) {
           loaded_from_source = true;
         }
       }
     }
   } else {
-    auto it_embed = node->properties.find("embedded_graph_yaml");
+    auto it_embed = node->properties.find("embedded_graph_json");
+    if (it_embed == node->properties.end() || it_embed->second.empty()) {
+      it_embed = node->properties.find("embedded_graph");
+    }
+    if (it_embed == node->properties.end() || it_embed->second.empty()) {
+      it_embed = node->properties.find("embedded_graph_yaml");
+    }
     if (it_embed != node->properties.end() && !it_embed->second.empty()) {
       io::StorageEngine storage;
-      if (storage.deserialize_yaml(it_embed->second, *child_graph).success) {
+      if (storage.deserialize(it_embed->second, *child_graph).success) {
         loaded_from_source = true;
       }
     }
@@ -2250,12 +2256,14 @@ bool CanvasWidget::pop_hierarchy_scope() {
               out << parser.export_xml(*current_sub_graph);
             } else {
               io::StorageEngine storage;
-              out << storage.serialize_yaml(*current_sub_graph);
+              out << storage.serialize(*current_sub_graph);
             }
           }
         } else {
           io::StorageEngine storage;
-          parent_node->properties["embedded_graph_yaml"] = storage.serialize_yaml(*current_sub_graph);
+          const std::string serialized = storage.serialize_json(*current_sub_graph);
+          parent_node->properties["embedded_graph_json"] = serialized;
+          parent_node->properties["embedded_graph"] = serialized;
         }
       }
     }
@@ -2309,12 +2317,14 @@ void CanvasWidget::sync_all_hierarchy_symbols() {
           out << parser.export_xml(*child_g);
         } else {
           io::StorageEngine storage;
-          out << storage.serialize_yaml(*child_g);
+          out << storage.serialize(*child_g);
         }
       }
     } else {
       io::StorageEngine storage;
-      symbol_node->properties["embedded_graph_yaml"] = storage.serialize_yaml(*child_g);
+      const std::string serialized = storage.serialize_json(*child_g);
+      symbol_node->properties["embedded_graph_json"] = serialized;
+      symbol_node->properties["embedded_graph"] = serialized;
     }
   }
 }
@@ -2338,7 +2348,7 @@ core::NodeId CanvasWidget::add_subsystem(core::Vec2d center, const std::string& 
   node.properties["subsystem_uuid"] = sub_uuid;
 
   if (is_file) {
-    node.set_subsystem_file(file_path.empty() ? (sname + ".yaml") : file_path);
+    node.set_subsystem_file(file_path.empty() ? (sname + ".madi") : file_path);
   } else {
     node.set_subsystem_builtin();
   }
@@ -2473,12 +2483,14 @@ void CanvasWidget::sync_current_subsystem_symbol() {
         out << parser.export_xml(*graph_model_);
       } else {
         io::StorageEngine storage;
-        out << storage.serialize_yaml(*graph_model_);
+        out << storage.serialize(*graph_model_);
       }
     }
   } else {
     io::StorageEngine storage;
-    symbol_node->properties["embedded_graph_yaml"] = storage.serialize_yaml(*graph_model_);
+    const std::string serialized = storage.serialize_json(*graph_model_);
+    symbol_node->properties["embedded_graph_json"] = serialized;
+    symbol_node->properties["embedded_graph"] = serialized;
   }
 }
 
@@ -2487,7 +2499,7 @@ bool CanvasWidget::convert_subsystem_to_file(core::NodeId nid, const std::string
   auto* node = graph_model_->find_node(nid);
   if (!node) return false;
 
-  std::string fpath = file_path.empty() ? (node->name + ".yaml") : file_path;
+  std::string fpath = file_path.empty() ? (node->name + ".madi") : file_path;
   node->set_subsystem_file(fpath);
 
   std::string uuid = node->properties["subsystem_uuid"];
@@ -2496,10 +2508,16 @@ bool CanvasWidget::convert_subsystem_to_file(core::NodeId nid, const std::string
     std::ofstream out(fpath);
     if (out.is_open()) {
       io::StorageEngine storage;
-      out << storage.serialize_yaml(*it_cached->second);
+      out << storage.serialize(*it_cached->second);
     }
   } else {
-    auto it_embed = node->properties.find("embedded_graph_yaml");
+    auto it_embed = node->properties.find("embedded_graph_json");
+    if (it_embed == node->properties.end() || it_embed->second.empty()) {
+      it_embed = node->properties.find("embedded_graph");
+    }
+    if (it_embed == node->properties.end() || it_embed->second.empty()) {
+      it_embed = node->properties.find("embedded_graph_yaml");
+    }
     if (it_embed != node->properties.end() && !it_embed->second.empty()) {
       std::ofstream out(fpath);
       if (out.is_open()) {
@@ -2552,7 +2570,7 @@ bool CanvasWidget::reload_subsystem_file(core::NodeId nid) {
 
   auto new_graph = std::make_unique<core::GraphModel>();
   io::StorageEngine storage;
-  if (!storage.deserialize_yaml(content, *new_graph).success) {
+  if (!storage.deserialize(content, *new_graph).success) {
     return false;
   }
   std::string uuid = node->properties["subsystem_uuid"];
@@ -2586,7 +2604,7 @@ bool CanvasWidget::save_subsystem_file(core::NodeId nid) {
   if (!out.is_open()) return false;
 
   io::StorageEngine storage;
-  out << storage.serialize_yaml(*it_cached->second);
+  out << storage.serialize(*it_cached->second);
   emit status_message_requested(QString("Saved subsystem '%1' to '%2'")
       .arg(QString::fromStdString(node->name))
       .arg(QString::fromStdString(fpath)));

@@ -1080,7 +1080,7 @@ public:
     if (type == StencilItemType::SubsystemFile) {
       const QString fpath = QFileDialog::getOpenFileName(
           this, "Select or Create Subsystem File", "",
-          "Supported Formats (*.yaml *.drawio *.xml);;All Files (*)");
+          "Supported Formats (*.madi *.json *.jsonc *.yaml *.drawio *.xml);;All Files (*)");
       if (!fpath.isEmpty()) {
         QFileInfo fi(fpath);
         renderer::ShapePlacementTemplate tmpl = template_from_stencil_data(static_cast<int>(type), param, custom_name);

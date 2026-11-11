@@ -1,6 +1,6 @@
 # Madí Architecture & Schematic Examples
 
-This directory contains reference diagrams and hierarchical subsystem examples in Madí's native deterministic line-oriented YAML format (`.madi`).
+This directory contains reference diagrams and hierarchical subsystem examples in Madí's native format (`.madi`, compliant with standard RFC 8259 JSON and JSONC comments).
 
 ## Available Examples
 

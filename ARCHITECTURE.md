@@ -19,7 +19,7 @@
 2. **Double-Precision World Space**: All canvas coordinates are stored as 64-bit IEEE 754 `double` values to ensure sub-millimeter precision across extreme zoom ranges ($10^{-5}$ to $10^{5}$) without spatial jitter or floating-point rounding degradation.
 3. **Viewport Isolation & Spatial Culling**: Complex sub-diagrams and child graphs are encapsulated within opaque bounding polygons in parent viewports. Only visible elements within the active frustum are processed and rasterized.
 4. **Asynchronous Non-Blocking Workers**: CPU-intensive algorithms (dynamic obstacle avoidance via `libavoid`, graph auto-layout via OGDF, spatial SQLite caching) run on detached background worker threads (`std::jthread`) to guarantee an uninterrupted 60/144 FPS UI experience.
-5. **Deterministic Storage (.madi)**: Human-readable line-oriented YAML format specifically formatted for minimal, conflict-free Git diffs.
+5. **Deterministic Storage (.madi)**: Standard RFC 8259 JSON format with JSONC comment support specifically formatted for minimal, conflict-free Git diffs.
 
 ---
 

@@ -23,15 +23,16 @@ class StorageEngine {
 public:
   StorageEngine() = default;
 
-  // 1. Line-oriented, deterministic YAML serializer for clean Git versioning and diffs
-  [[nodiscard]] std::string serialize_yaml(
+  // Primary serializer: RFC 8259 Standard JSON with .madi extension
+  [[nodiscard]] std::string serialize(
       const core::GraphModel& graph, const core::BlockLibraryManager* lib_manager = nullptr) const;
 
-  [[nodiscard]] StorageResult deserialize_yaml(
-      std::string_view yaml_text, core::GraphModel& out_graph,
+  // Primary deserializer: Accepts RFC 8259 JSON, JSONC (with // and /* */ comments), and legacy YAML fallback
+  [[nodiscard]] StorageResult deserialize(
+      std::string_view text, core::GraphModel& out_graph,
       core::BlockLibraryManager* out_lib_manager = nullptr) const;
 
-  // JSON serializer
+  // 1. Standard RFC 8259 JSON serializer & deserializer
   [[nodiscard]] std::string serialize_json(
       const core::GraphModel& graph, const core::BlockLibraryManager* lib_manager = nullptr) const;
 
@@ -39,7 +40,15 @@ public:
       std::string_view json_text, core::GraphModel& out_graph,
       core::BlockLibraryManager* out_lib_manager = nullptr) const;
 
-  // 2. SQLite Spatial Cache for partial paging of 10k-100k+ nodes
+  // 2. Line-oriented YAML serializer (retained for backward compatibility)
+  [[nodiscard]] std::string serialize_yaml(
+      const core::GraphModel& graph, const core::BlockLibraryManager* lib_manager = nullptr) const;
+
+  [[nodiscard]] StorageResult deserialize_yaml(
+      std::string_view yaml_text, core::GraphModel& out_graph,
+      core::BlockLibraryManager* out_lib_manager = nullptr) const;
+
+  // 3. SQLite Spatial Cache for partial paging of 10k-100k+ nodes
   [[nodiscard]] StorageResult save_sqlite_cache(const std::string& db_file_path,
                                                 const core::GraphModel& graph) const;
 
@@ -47,7 +56,7 @@ public:
                                                          core::Rect2d spatial_bounds,
                                                          core::GraphModel& out_graph) const;
 
-  // 3. ZIP Archive Container (.diag bundle)
+  // 4. ZIP Archive Container (.diag bundle)
   [[nodiscard]] StorageResult pack_diag_archive(const std::string& diag_file_path,
                                                 const core::GraphModel& root_graph,
                                                 const core::BlockLibraryManager& lib_manager) const;

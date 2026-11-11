@@ -147,7 +147,7 @@ private:
       "</p>"
 
       "<p><b>Madí CLI &amp; Native File Format:</b><br>"
-      "Command-line invocation: <code>madi</code> &nbsp;|&nbsp; Native document extension: <code>.madi</code> (deterministic human-readable YAML format)."
+      "Command-line invocation: <code>madi</code> &nbsp;|&nbsp; Native document extension: <code>.madi</code> (RFC 8259 standard JSON with JSONC comment support)."
       "</p>"
       "</div>"
     );
@@ -203,7 +203,7 @@ private:
       "<div style='margin-bottom: 12px;'>"
         "<b style='color: #F1F5F9; font-size: 13px;'>5. Deterministic Persistence &amp; Draw.io Interoperability (<code>libmadi-io</code>)</b>"
         "<ul style='margin-top: 4px; margin-left: -15px;'>"
-          "<li>Deterministic human-readable YAML file format (<code>.madi</code>) optimized for clean git diffs and version control.</li>"
+          "<li>Standard JSON file format compliant with RFC 8259 (<code>.madi</code>) with JSONC comment support, optimized for clean git diffs and version control.</li>"
           "<li>Bidirectional lossless Draw.io XML parser and exporter preserving styling, hierarchy, and geometric connectivity.</li>"
         "</ul>"
       "</div>"

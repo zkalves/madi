@@ -105,7 +105,7 @@ public:
     file_row_layout->setContentsMargins(0, 0, 0, 0);
     file_row_layout->setSpacing(4);
     file_path_edit_ = new QLineEdit(file_row);
-    file_path_edit_->setPlaceholderText("subsystem.yaml");
+    file_path_edit_->setPlaceholderText("subsystem.madi");
     btn_browse_ = new QPushButton("Browse...", file_row);
     file_row_layout->addWidget(file_path_edit_);
     file_row_layout->addWidget(btn_browse_);
@@ -279,7 +279,7 @@ private:
       if (!canvas_ || active_node_id_ == core::InvalidNodeId) return;
       const QString fpath = QFileDialog::getOpenFileName(
           this, "Select Subsystem File", "",
-          "Supported Formats (*.yaml *.drawio *.xml);;All Files (*)");
+          "Supported Formats (*.madi *.json *.jsonc *.yaml *.drawio *.xml);;All Files (*)");
       if (!fpath.isEmpty()) {
         file_path_edit_->setText(fpath);
         canvas_->convert_subsystem_to_file(active_node_id_, fpath.toStdString());
@@ -296,8 +296,8 @@ private:
       } else {
         const QString fpath = QFileDialog::getSaveFileName(
             this, "Export Subsystem to File",
-            QString::fromStdString(n->name + ".yaml"),
-            "VECTOR YAML (*.yaml);;All Files (*)");
+            QString::fromStdString(n->name + ".madi"),
+            "Madí Diagram (*.madi);;JSON Diagram (*.json *.jsonc);;Madí YAML (*.yaml);;All Files (*)");
         if (!fpath.isEmpty()) {
           canvas_->convert_subsystem_to_file(active_node_id_, fpath.toStdString());
         }
@@ -311,7 +311,7 @@ private:
         QString fpath = file_path_edit_->text().trimmed();
         if (fpath.isEmpty()) {
           if (const auto* n = graph_model_->find_node(active_node_id_)) {
-            fpath = QString::fromStdString(n->name + ".yaml");
+            fpath = QString::fromStdString(n->name + ".madi");
             file_path_edit_->setText(fpath);
           }
         }

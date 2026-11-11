@@ -1,63 +1,90 @@
-# Madí Diagram Model - Deterministic YAML Format (.madi)
-# Example: Hierarchical Controller with Subsystem Scopes
-schema_version: 1
-nodes:
-  - id: 1
-    name: "Sensor Input Matrix"
-    shape: 0
-    bounds: [80.0000, 120.0000, 150.0000, 80.0000]
-    ports:
-      - id: 11
-        name: "DataOut"
-        side: 1
-        offset_pct: 0.5000
-  - id: 2
-    name: "DSP Subsystem Core"
-    shape: 3
-    bounds: [320.0000, 100.0000, 200.0000, 120.0000]
-    properties:
-      subsystem_type: "builtin"
-      embedded_graph_yaml: "# Madí Subsystem Internal Diagram\nschema_version: 1\nnodes:\n  - id: 10\n    name: \"FIR Filter Bank\"\n    shape: 0\n    bounds: [100.0, 80.0, 140.0, 70.0]\n  - id: 20\n    name: \"FFT Accelerator\"\n    shape: 0\n    bounds: [320.0, 80.0, 140.0, 70.0]\nedges:\n  - id: 101\n    source_node: 10\n    target_node: 20\n    arrowhead: \"classic\"\n    waypoints:\n      - [240.0, 115.0]\n      - [320.0, 115.0]\n"
-    ports:
-      - id: 21
-        name: "RawIn"
-        side: 3
-        offset_pct: 0.5000
-      - id: 22
-        name: "ProcessedOut"
-        side: 1
-        offset_pct: 0.5000
-  - id: 3
-    name: "Actuator Output Driver"
-    shape: 0
-    bounds: [600.0000, 120.0000, 150.0000, 80.0000]
-    ports:
-      - id: 31
-        name: "CmdIn"
-        side: 3
-        offset_pct: 0.5000
-edges:
-  - id: 2001
-    source_node: 1
-    source_port: 11
-    target_node: 2
-    target_port: 21
-    routing_style: 1
-    arrowhead: "classic"
-    waypoints:
-      - [230.0000, 160.0000]
-      - [275.0000, 160.0000]
-      - [275.0000, 160.0000]
-      - [320.0000, 160.0000]
-  - id: 2002
-    source_node: 2
-    source_port: 22
-    target_node: 3
-    target_port: 31
-    routing_style: 1
-    arrowhead: "classic"
-    waypoints:
-      - [520.0000, 160.0000]
-      - [560.0000, 160.0000]
-      - [560.0000, 160.0000]
-      - [600.0000, 160.0000]
+// Madí Diagram Model - Model, Align & Diagram Interconnects (.madi)
+// Standard RFC 8259 JSON format with JSONC comment support
+{
+  "$schema": "https://madi.dev/schema/v1/diagram.json",
+  "schema_version": 1,
+  "format": "madi",
+  "generator": "madi 1.0.0",
+  "nodes": [
+    {
+      "id": 1,
+      "name": "Sensor Input Matrix",
+      "shape": 0,
+      "bounds": [80.0, 120.0, 150.0, 80.0],
+      "ports": [
+        {
+          "id": 11,
+          "name": "DataOut",
+          "anchor": [1.0, 0.5],
+          "direction": 1
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "DSP Subsystem Core",
+      "shape": 3,
+      "bounds": [320.0, 100.0, 200.0, 120.0],
+      "properties": {
+        "embedded_graph_json": "{\n  \"schema_version\": 1,\n  \"nodes\": [\n    {\n      \"id\": 10,\n      \"name\": \"FIR Filter Bank\",\n      \"shape\": 0,\n      \"bounds\": [100.0, 80.0, 140.0, 70.0]\n    },\n    {\n      \"id\": 20,\n      \"name\": \"FFT Accelerator\",\n      \"shape\": 0,\n      \"bounds\": [320.0, 80.0, 140.0, 70.0]\n    }\n  ],\n  \"edges\": [\n    {\n      \"id\": 101,\n      \"name\": \"FilterToFFT\",\n      \"source_node\": 10,\n      \"target_node\": 20,\n      \"routing_style\": 0,\n      \"waypoints\": [\n        [240.0, 115.0],\n        [320.0, 115.0]\n      ]\n    }\n  ]\n}",
+        "subsystem_type": "builtin"
+      },
+      "ports": [
+        {
+          "id": 21,
+          "name": "RawIn",
+          "anchor": [0.0, 0.5],
+          "direction": 3
+        },
+        {
+          "id": 22,
+          "name": "ProcessedOut",
+          "anchor": [1.0, 0.5],
+          "direction": 1
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Telemetry Gateway",
+      "shape": 0,
+      "bounds": [600.0, 120.0, 160.0, 80.0],
+      "ports": [
+        {
+          "id": 31,
+          "name": "PacketIn",
+          "anchor": [0.0, 0.5],
+          "direction": 3
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": 101,
+      "name": "sensor_to_dsp",
+      "source_node": 1,
+      "source_port": 11,
+      "target_node": 2,
+      "target_port": 21,
+      "routing_style": 0,
+      "waypoints": [
+        [230.0, 160.0],
+        [320.0, 160.0]
+      ]
+    },
+    {
+      "id": 102,
+      "name": "dsp_to_telemetry",
+      "source_node": 2,
+      "source_port": 22,
+      "target_node": 3,
+      "target_port": 31,
+      "routing_style": 0,
+      "waypoints": [
+        [520.0, 160.0],
+        [600.0, 160.0]
+      ]
+    }
+  ]
+}

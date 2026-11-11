@@ -19,7 +19,7 @@ int main() {
   core::Node n1;
   n1.name = "Root Module \"Alpha\"";
   n1.bounds = {50.0, 50.0, 160.0, 90.0};
-  n1.properties["embedded_graph_yaml"] = "# Line 1\nschema_version: 1\nnodes:\n  - id: 10\n    name: \"Sub\"\n";
+  n1.properties["embedded_graph_json"] = "{\n  \"schema_version\": 1,\n  \"nodes\": [{\"id\": 10, \"name\": \"Sub\"}]\n}";
   n1.properties["author"] = "Madí \"Team\"\nSpecial Line";
   const core::NodeId nid1 = orig_model.add_node(std::move(n1));
 
@@ -50,8 +50,89 @@ int main() {
   edge.target_port = pid2;
   orig_model.add_edge(std::move(edge));
 
-  // 2. Test YAML Serialization & Deserialization with unescaping
   io::StorageEngine storage;
+
+  // 2. Test Standard RFC 8259 JSON Serialization & Deserialization
+  std::cout << "  -> Testing RFC 8259 standard JSON (.madi) serializer...\n";
+  std::string json_str = storage.serialize_json(orig_model);
+  assert(!json_str.empty());
+  assert(json_str.find("\"format\": \"madi\"") != std::string::npos);
+  assert(json_str.find("\"nodes\":") != std::string::npos);
+  assert(json_str.find("\"edges\":") != std::string::npos);
+
+  core::GraphModel loaded_json;
+  auto json_res = storage.deserialize_json(json_str, loaded_json);
+  assert(json_res.success);
+  assert(loaded_json.node_count() == 2);
+  assert(loaded_json.edge_count() == 1);
+
+  const auto* loaded_jn1 = loaded_json.find_node(nid1);
+  assert(loaded_jn1 != nullptr);
+  assert(loaded_jn1->name == "Root Module \"Alpha\"");
+  auto it_embed_json = loaded_jn1->properties.find("embedded_graph_json");
+  assert(it_embed_json != loaded_jn1->properties.end());
+  assert(it_embed_json->second.find("schema_version") != std::string::npos);
+  assert(it_embed_json->second.find('\n') != std::string::npos);
+
+  // 3. Test JSONC (JSON with Comments & Trailing Commas)
+  std::cout << "  -> Testing JSONC (comments & trailing commas) acceptance...\n";
+  std::string jsonc_text = R"(
+    // Top-level Madí Diagram Model with single-line comment
+    {
+      /* Multi-line block comment
+         describing the diagram format */
+      "schema_version": 1,
+      "format": "madi",
+      "nodes": [
+        {
+          "id": 1,
+          "name": "Node With // in name and /* in text */", // line comment after node
+          "shape": 0,
+          "bounds": [100.0, 120.0, 160.0, 80.0],
+          "properties": {
+            "comment_test": "valid value", // property comment
+          }, // trailing comma in object
+          "ports": [
+            {
+              "id": 101,
+              "name": "out",
+              "anchor": [1.0, 0.5],
+              "direction": "east",
+            }, // trailing comma in array
+          ]
+        },
+      ], // trailing comma in nodes array
+      "edges": [
+        // empty edge list
+      ],
+    }
+  )";
+
+  core::GraphModel loaded_jsonc;
+  auto jsonc_res = storage.deserialize_json(jsonc_text, loaded_jsonc);
+  assert(jsonc_res.success);
+  assert(loaded_jsonc.node_count() == 1);
+  const auto* jc_node = loaded_jsonc.find_node(1);
+  assert(jc_node != nullptr);
+  assert(jc_node->name == "Node With // in name and /* in text */");
+  assert(jc_node->properties.at("comment_test") == "valid value");
+  assert(jc_node->port_ids.size() == 1);
+  const auto* jc_port = loaded_jsonc.find_port(jc_node->port_ids[0]);
+  assert(jc_port != nullptr);
+  assert(jc_port->direction == core::PortDirection::East);
+
+  // 4. Test Unified StorageEngine::deserialize with JSON, JSONC, and YAML fallback
+  std::cout << "  -> Testing unified StorageEngine::deserialize with auto-fallback...\n";
+  core::GraphModel auto_json_model;
+  assert(storage.deserialize(json_str, auto_json_model).success);
+  assert(auto_json_model.node_count() == 2);
+
+  core::GraphModel auto_jsonc_model;
+  assert(storage.deserialize(jsonc_text, auto_jsonc_model).success);
+  assert(auto_jsonc_model.node_count() == 1);
+
+  // 5. Test Backward-compatible YAML Serialization & Deserialization
+  std::cout << "  -> Testing legacy YAML backward compatibility...\n";
   std::string yaml_str = storage.serialize_yaml(orig_model);
   assert(!yaml_str.empty());
 
@@ -61,16 +142,12 @@ int main() {
   assert(loaded_yaml.node_count() == 2);
   assert(loaded_yaml.edge_count() == 1);
 
-  const auto* loaded_n1 = loaded_yaml.find_node(nid1);
-  assert(loaded_n1 != nullptr);
-  assert(loaded_n1->name == "Root Module \"Alpha\"");
-  auto it_embed = loaded_n1->properties.find("embedded_graph_yaml");
-  assert(it_embed != loaded_n1->properties.end());
-  // Verify real newlines and quotes were restored correctly
-  assert(it_embed->second.find('\n') != std::string::npos);
-  assert(it_embed->second.find("schema_version: 1") != std::string::npos);
+  core::GraphModel auto_yaml_model;
+  assert(storage.deserialize(yaml_str, auto_yaml_model).success);
+  assert(auto_yaml_model.node_count() == 2);
 
-  // 3. Test Draw.io XML Import / Export
+  // 6. Test Draw.io XML Import / Export
+  std::cout << "  -> Testing Draw.io XML import / export...\n";
   io::DrawioParser drawio;
   std::string drawio_xml = drawio.export_xml(orig_model, "Architecture_Page");
   assert(!drawio_xml.empty());

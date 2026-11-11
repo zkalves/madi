@@ -1128,8 +1128,8 @@ int main(int argc, char* argv[]) {
     assert(hwin.graph_model()->node_count() == 1);
     assert(hwin.is_document_modified());
 
-    // 5. Test saving and modified flag clearing
-    const QString temp_diag = "/tmp/test_madi_save_prompt.yaml";
+    // 5. Test saving and modified flag clearing in native .madi JSON format
+    const QString temp_diag = "/tmp/test_madi_save_prompt.madi";
     bool ok_save = hwin.save_diagram_path(temp_diag);
     assert(ok_save);
     (void)ok_save;

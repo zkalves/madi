@@ -18,7 +18,7 @@ The project is named in homage to **Arte Madí**, the 1946 Buenos Aires geometri
    - **Articulated Structures**: Madí pioneered transformable, hinged, modular physical structures — analogous to nested, hierarchical schematic subsystems with dynamic pin alignments.
 3. **Tool Ergonomics**:
    - **CLI command**: `madi` (short, 4 letters, zero keyboard travel).
-   - **Native file extension**: `.madi` (clean, distinct line-oriented YAML format designed for optimal Git diffs).
+   - **Native file extension**: `.madi` (standard JSON format compliant with RFC 8259, with JSONC comment support and optimal Git diffs).
    - **Pronunciation**: /mah-DEE/ (rhymes with *body*, sounds like *Maddie*).
 4. **Engineering Backronym**:
    **Model, Align & Diagram Interconnects**.
@@ -31,7 +31,7 @@ The project is named in homage to **Arte Madí**, the 1946 Buenos Aires geometri
 - **Hierarchical Subsystems & Instantiation**: Built-in and file-linked subsystems (`.madi`), boundary port routing, prototype property overrides, and breadcrumb drill-down.
 - **Parametric Shapes & Multi-Point Connectors**: Freeform polygons with interactive vertex handles, segmented arrows, and line physics.
 - **Autonomous Obstacle Avoidance**: Background `RouterWorker` (`std::jthread`) with dynamic Manhattan routing, bridge crossings, and selectable snapping engine.
-- **Deterministic Storage & Interop**: Line-oriented `.madi` format for Git version control, `.diag` archive bundler, and bidirectional Draw.io XML compatibility.
+- **Deterministic Storage & Interop**: Standard RFC 8259 JSON `.madi` format with JSONC comments for Git version control, `.diag` archive bundler, and bidirectional Draw.io XML compatibility.
 
 ---
 

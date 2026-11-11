@@ -2879,7 +2879,7 @@ private:
     auto* file_row_layout = new QHBoxLayout(file_row);
     file_row_layout->setContentsMargins(0, 0, 0, 0);
     inspector_subsystem_file_ = new QLineEdit(file_row);
-    inspector_subsystem_file_->setPlaceholderText("subsystem.yaml");
+    inspector_subsystem_file_->setPlaceholderText("subsystem.madi");
     btn_browse_subsystem_file_ = new QPushButton("Browse...", file_row);
     file_row_layout->addWidget(inspector_subsystem_file_);
     file_row_layout->addWidget(btn_browse_subsystem_file_);
@@ -2930,7 +2930,7 @@ private:
         QString fpath = inspector_subsystem_file_->text().trimmed();
         if (fpath.isEmpty()) {
           if (auto* n = cur_g->find_node(active_inspected_node_)) {
-            fpath = QString::fromStdString(n->name + ".yaml");
+            fpath = QString::fromStdString(n->name + ".madi");
             inspector_subsystem_file_->setText(fpath);
           }
         }
@@ -2953,7 +2953,7 @@ private:
 
     connect(btn_browse_subsystem_file_, &QPushButton::clicked, this, [this]() {
       if (active_inspected_node_ == madi::core::InvalidNodeId) return;
-      const QString fpath = QFileDialog::getOpenFileName(this, "Select Subsystem File", "", "Supported Formats (*.yaml *.drawio *.xml);;All Files (*)");
+      const QString fpath = QFileDialog::getOpenFileName(this, "Select Subsystem File", "", "Supported Formats (*.madi *.json *.jsonc *.yaml *.drawio *.xml);;All Files (*)");
       if (!fpath.isEmpty()) {
         inspector_subsystem_file_->setText(fpath);
         canvas_->convert_subsystem_to_file(active_inspected_node_, fpath.toStdString());
@@ -2988,7 +2988,7 @@ private:
       if (n->is_file_subsystem()) {
         canvas_->convert_subsystem_to_builtin(active_inspected_node_);
       } else {
-        const QString fpath = QFileDialog::getSaveFileName(this, "Export Subsystem to File", QString::fromStdString(n->name + ".madi"), "Madí Diagram (*.madi);;Madí YAML (*.yaml);;All Files (*)");
+        const QString fpath = QFileDialog::getSaveFileName(this, "Export Subsystem to File", QString::fromStdString(n->name + ".madi"), "Madí Diagram (*.madi);;JSON Diagram (*.json *.jsonc);;Madí YAML (*.yaml);;All Files (*)");
         if (!fpath.isEmpty()) {
           canvas_->convert_subsystem_to_file(active_inspected_node_, fpath.toStdString());
         }
@@ -3597,8 +3597,12 @@ public:
 
     std::string content_out;
     if (filename.endsWith(".madi", Qt::CaseInsensitive) ||
-        filename.endsWith(".yaml", Qt::CaseInsensitive) ||
-        filename.endsWith(".yml", Qt::CaseInsensitive)) {
+        filename.endsWith(".json", Qt::CaseInsensitive) ||
+        filename.endsWith(".jsonc", Qt::CaseInsensitive)) {
+      madi::io::StorageEngine storage;
+      content_out = storage.serialize_json(*graph_);
+    } else if (filename.endsWith(".yaml", Qt::CaseInsensitive) ||
+               filename.endsWith(".yml", Qt::CaseInsensitive)) {
       madi::io::StorageEngine storage;
       content_out = storage.serialize_yaml(*graph_);
     } else {
@@ -3633,7 +3637,7 @@ public:
     const QString default_name = current_file_path_.isEmpty() ? "diagram.madi" : current_file_path_;
     const QString filename = QFileDialog::getSaveFileName(
         this, "Save Diagram", default_name,
-        "Madí Diagram (*.madi);;Draw.io XML Diagram (*.xml *.drawio);;Madí YAML (*.yaml *.yml);;All Files (*)");
+        "Madí Diagram (*.madi);;JSON Diagram (*.json *.jsonc);;Draw.io XML Diagram (*.xml *.drawio);;Madí YAML (*.yaml *.yml);;All Files (*)");
     if (filename.isEmpty()) {
       return false;
     }
@@ -3646,7 +3650,7 @@ public:
     }
     const QString filename = QFileDialog::getOpenFileName(
         this, "Open Diagram", "",
-        "Supported Formats (*.madi *.xml *.drawio *.yaml *.yml *.diag);;Madí Diagram (*.madi);;Draw.io XML Diagram (*.xml *.drawio);;Madí YAML (*.yaml *.yml);;All Files (*)");
+        "Supported Formats (*.madi *.json *.jsonc *.xml *.drawio *.yaml *.yml *.diag);;Madí Diagram (*.madi);;JSON Diagram (*.json *.jsonc);;Draw.io XML Diagram (*.xml *.drawio);;Madí YAML (*.yaml *.yml);;All Files (*)");
     if (!filename.isEmpty()) {
       open_diagram_path(filename);
     }
@@ -3669,13 +3673,12 @@ public:
     }
     graph_->clear();
 
-    const bool is_yaml = filename.endsWith(".madi", Qt::CaseInsensitive) ||
-                         filename.endsWith(".yaml", Qt::CaseInsensitive) ||
-                         filename.endsWith(".yml", Qt::CaseInsensitive);
+    const bool is_drawio = filename.endsWith(".xml", Qt::CaseInsensitive) ||
+                           filename.endsWith(".drawio", Qt::CaseInsensitive);
     bool imported = false;
     std::string err_msg;
 
-    if (!is_yaml) {
+    if (is_drawio) {
       madi::io::DrawioParser parser;
       auto res = parser.import_xml(content, *graph_);
       if (res.success) {
@@ -3687,11 +3690,19 @@ public:
 
     if (!imported) {
       madi::io::StorageEngine storage;
-      auto res = storage.deserialize_yaml(content, *graph_);
+      auto res = storage.deserialize(content, *graph_);
       if (res.success) {
         imported = true;
       } else if (err_msg.empty()) {
         err_msg = res.error_message;
+      }
+    }
+
+    if (!imported && !is_drawio) {
+      madi::io::DrawioParser parser;
+      auto res = parser.import_xml(content, *graph_);
+      if (res.success) {
+        imported = true;
       }
     }
 

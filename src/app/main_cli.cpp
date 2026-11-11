@@ -50,9 +50,9 @@ bool load_diagram(const std::string& file_path, madi::core::GraphModel& model, s
     }
   } else {
     madi::io::StorageEngine storage;
-    auto res = storage.deserialize_yaml(content, model);
+    auto res = storage.deserialize(content, model);
     if (!res.success) {
-      err = "YAML deserializer error: " + res.error_message;
+      err = "Deserializer error: " + res.error_message;
       return false;
     }
   }
@@ -69,9 +69,13 @@ bool save_diagram(const std::string& file_path, const madi::core::GraphModel& mo
   if (file_path.ends_with(".drawio") || file_path.ends_with(".xml")) {
     madi::io::DrawioParser parser;
     out << parser.export_xml(model);
-  } else {
+  } else if (file_path.ends_with(".yaml") || file_path.ends_with(".yml")) {
     madi::io::StorageEngine storage;
     out << storage.serialize_yaml(model);
+  } else {
+    // Default format for .madi, .json, .jsonc
+    madi::io::StorageEngine storage;
+    out << storage.serialize_json(model);
   }
   return true;
 }

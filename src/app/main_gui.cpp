@@ -494,7 +494,7 @@ private:
 
   void open_diagram() {
     const QString filename = QFileDialog::getOpenFileName(
-        this, "Open Diagram", "", "Supported Formats (*.yaml *.drawio *.xml *.diag);;All Files (*)");
+        this, "Open Diagram", "", "Supported Formats (*.madi *.json *.jsonc *.yaml *.drawio *.xml *.diag);;All Files (*)");
     if (filename.isEmpty()) return;
 
     std::ifstream in(filename.toStdString());
@@ -514,7 +514,7 @@ private:
       }
     } else {
       madi::io::StorageEngine storage;
-      auto res = storage.deserialize_yaml(content, *graph_);
+      auto res = storage.deserialize(content, *graph_);
       if (!res.success) {
         QMessageBox::warning(this, "Import Error", QString::fromStdString(res.error_message));
         return;
@@ -532,11 +532,16 @@ private:
 
   void save_diagram() {
     const QString filename = QFileDialog::getSaveFileName(
-        this, "Save Diagram", "diagram.yaml", "Madí YAML (*.yaml);;All Files (*)");
+        this, "Save Diagram", "diagram.madi", "Madí Diagram (*.madi);;JSON Diagram (*.json *.jsonc);;Madí YAML (*.yaml);;All Files (*)");
     if (filename.isEmpty()) return;
 
     madi::io::StorageEngine storage;
-    std::string yaml_out = storage.serialize_yaml(*graph_);
+    std::string content_out;
+    if (filename.endsWith(".yaml", Qt::CaseInsensitive) || filename.endsWith(".yml", Qt::CaseInsensitive)) {
+      content_out = storage.serialize_yaml(*graph_);
+    } else {
+      content_out = storage.serialize_json(*graph_);
+    }
 
     std::ofstream out(filename.toStdString());
     if (!out.is_open()) {

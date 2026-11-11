@@ -710,7 +710,7 @@ private:
       }
 
       if (is_file && fpath.isEmpty()) {
-        fpath = sname + ".yaml";
+        fpath = sname + ".madi";
       }
 
       core::NodeId nid = canvas_->add_subsystem(center, sname.toStdString(), is_file, fpath.toStdString());

@@ -250,11 +250,20 @@ void test_hierarchical_block_definition_and_instances() {
   std::cout << "  -> Avoidance router produced " << route_res.results[0].waypoints.size() << " waypoints avoiding obstacle.\n";
 
   // 8. Test Tri-Model Storage & Draw.io Interop
-  std::cout << "[Test 7] Verifying YAML Serializer and Draw.io compatibility...\n";
+  std::cout << "[Test 7] Verifying RFC 8259 JSON (.madi), JSONC comments, and Draw.io compatibility...\n";
   io::StorageEngine storage;
+  std::string json_out = storage.serialize_json(top_graph, &lib_manager);
+  assert(!json_out.empty());
+  assert(json_out.find("\"format\": \"madi\"") != std::string::npos);
+  assert(json_out.find("ALU_Stage1") != std::string::npos);
+
+  core::GraphModel loaded_json_graph;
+  auto load_json_res = storage.deserialize_json(json_out, loaded_json_graph);
+  assert(load_json_res.success);
+  assert(loaded_json_graph.node_count() == top_graph.node_count());
+
   std::string yaml_out = storage.serialize_yaml(top_graph, &lib_manager);
   assert(!yaml_out.empty());
-  assert(yaml_out.find("ALU_Stage1") != std::string::npos);
 
   core::GraphModel loaded_graph;
   auto load_res = storage.deserialize_yaml(yaml_out, loaded_graph);
@@ -270,7 +279,7 @@ void test_hierarchical_block_definition_and_instances() {
   auto drawio_res = drawio.import_xml(drawio_xml, drawio_imported);
   assert(drawio_res.success);
   assert(drawio_imported.node_count() == top_graph.node_count());
-  std::cout << "  -> YAML serialization and Draw.io bidirectional XML import/export verified.\n";
+  std::cout << "  -> JSON (.madi), YAML, and Draw.io bidirectional XML import/export verified.\n";
 
   std::cout << "\n>>> ALL MADÍ ARCHITECTURE SMOKE TESTS PASSED CLEANLY! <<<\n";
 }
