@@ -30,7 +30,10 @@ echo "===> [AppImage] Staging files into AppDir..."
 DESTDIR="${APP_DIR}" cmake --install "${BUILD_DIR}" --prefix /usr
 
 # Ensure desktop file and icon are present in AppDir root
-ICON_SVG="${PROJECT_ROOT}/res/icons/madi.svg"
+ICON_SVG="${PROJECT_ROOT}/res/icons/icon.svg"
+if [ ! -f "${ICON_SVG}" ]; then
+    ICON_SVG="${PROJECT_ROOT}/res/icons/madi.svg"
+fi
 if [ ! -f "${ICON_SVG}" ]; then
     ICON_SVG="${PROJECT_ROOT}/res/icons/vector.svg"
 fi

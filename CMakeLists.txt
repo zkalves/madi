@@ -225,7 +225,10 @@ include(GNUInstallDirs)
 
 find_program(RSVG_CONVERT rsvg-convert)
 find_program(IMAGE_CONVERT convert)
-set(CANONICAL_ICON_SVG "${CMAKE_CURRENT_SOURCE_DIR}/res/icons/madi.svg")
+set(CANONICAL_ICON_SVG "${CMAKE_CURRENT_SOURCE_DIR}/res/icons/icon.svg")
+if(NOT EXISTS "${CANONICAL_ICON_SVG}")
+  set(CANONICAL_ICON_SVG "${CMAKE_CURRENT_SOURCE_DIR}/res/icons/madi.svg")
+endif()
 if(NOT EXISTS "${CANONICAL_ICON_SVG}")
   set(CANONICAL_ICON_SVG "${CMAKE_CURRENT_SOURCE_DIR}/res/icons/vector.svg")
 endif()
@@ -300,7 +303,12 @@ elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/vector.appdata.xml")
   )
 endif()
 
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/res/icons/madi.svg")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/res/icons/icon.svg")
+  install(FILES res/icons/icon.svg
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
+    RENAME madi.svg
+  )
+elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/res/icons/madi.svg")
   install(FILES res/icons/madi.svg
     DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
     RENAME madi.svg

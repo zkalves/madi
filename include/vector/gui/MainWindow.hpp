@@ -11,6 +11,7 @@
 #include "vector/core/HierarchicalBlock.hpp"
 #include "vector/core/SpatialIndex.hpp"
 #include "vector/grid/GridManager.hpp"
+#include "vector/gui/AboutMadiDialog.hpp"
 #include "vector/gui/CommandConsoleDock.hpp"
 #include "vector/gui/FormatInspectorDock.hpp"
 #include "vector/gui/HierarchyTreeDock.hpp"
@@ -30,8 +31,10 @@
 #include <QCloseEvent>
 #include <QColorDialog>
 #include <QComboBox>
+#include <QDialog>
 #include <QDockWidget>
 #include <QDoubleSpinBox>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
@@ -39,6 +42,7 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QIcon>
 #include <QInputDialog>
 #include <QKeySequence>
 #include <QLabel>
@@ -52,7 +56,11 @@
 #include <QSlider>
 #include <QSpinBox>
 #include <QStatusBar>
+#include <QSysInfo>
+#include <QSystemTrayIcon>
 #include <QTableWidget>
+#include <QTabWidget>
+#include <QTextBrowser>
 #include <QToolBar>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -371,10 +379,16 @@ public:
 
     update_snap_ui();
     update_angle_snap_ui();
+    setup_system_tray();
     statusBar()->showMessage("Madí ready. Select a tool from the toolbar or palette to insert figures.", 4000);
   }
 
   ~MainWindow() override {
+    if (tray_icon_) {
+      tray_icon_->hide();
+      delete tray_icon_;
+      tray_icon_ = nullptr;
+    }
     if (graph_ && model_listener_) {
       graph_->remove_listener(model_listener_.get());
     }
@@ -409,6 +423,112 @@ public:
   [[nodiscard]] QAction* action_keyboard_shortcuts() const noexcept { return action_keyboard_shortcuts_; }
   [[nodiscard]] CommandConsoleDock* console_dock() const noexcept { return console_dock_; }
   [[nodiscard]] QAction* action_toggle_segment_moving() const noexcept { return action_toggle_segment_moving_; }
+
+  static QIcon create_app_icon() {
+    QIcon icon;
+    if (QFile::exists(":/icons/icon.svg")) {
+      icon.addFile(":/icons/icon.svg");
+    }
+    if (QFile::exists(":/icons/madi.svg")) {
+      icon.addFile(":/icons/madi.svg");
+    }
+    if (QFile::exists(":/icons/vector.svg")) {
+      icon.addFile(":/icons/vector.svg");
+    }
+
+    // Generate standard raster pixmaps directly from icon.svg for WMs and system tray
+    QIcon svg_icon(":/icons/icon.svg");
+    if (!svg_icon.isNull()) {
+      for (int s : {16, 22, 24, 32, 48, 64, 128, 256, 512}) {
+        QPixmap pm = svg_icon.pixmap(s, s);
+        if (!pm.isNull()) {
+          icon.addPixmap(pm);
+        }
+      }
+    } else {
+      QPixmap base;
+      if (QFile::exists(":/icons/icon.png")) {
+        base.load(":/icons/icon.png");
+      } else if (QFile::exists(":/icons/madi.png")) {
+        base.load(":/icons/madi.png");
+      }
+      if (!base.isNull()) {
+        for (int s : {16, 22, 24, 32, 48, 64, 128, 256, 512}) {
+          icon.addPixmap(base.scaled(s, s, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        }
+      }
+    }
+
+    if (icon.isNull()) {
+      icon = QIcon::fromTheme("madi", QIcon(":/icons/icon.svg"));
+    }
+    return icon;
+  }
+
+  void setup_system_tray() {
+    QIcon app_icon = create_app_icon();
+    setWindowIcon(app_icon);
+
+    if (tray_icon_) {
+      tray_icon_->hide();
+      delete tray_icon_;
+      tray_icon_ = nullptr;
+    }
+
+    if (!QSystemTrayIcon::isSystemTrayAvailable()) {
+      return;
+    }
+
+    tray_icon_ = new QSystemTrayIcon(app_icon, this);
+    tray_icon_->setToolTip("Madí - Model, Align & Diagram Interconnects");
+
+    auto* tray_menu = new QMenu(this);
+    auto* act_show = tray_menu->addAction(app_icon, "Show Madí");
+    connect(act_show, &QAction::triggered, this, [this]() {
+      if (isMinimized()) {
+        showNormal();
+      }
+      show();
+      raise();
+      activateWindow();
+    });
+
+    tray_menu->addSeparator();
+    auto* act_new = tray_menu->addAction("New Diagram");
+    connect(act_new, &QAction::triggered, this, [this]() { new_diagram(); });
+    auto* act_open = tray_menu->addAction("Open Diagram...");
+    connect(act_open, &QAction::triggered, this, [this]() { open_diagram(); });
+    auto* act_save = tray_menu->addAction("Save Diagram");
+    connect(act_save, &QAction::triggered, this, [this]() { save_diagram(); });
+
+    tray_menu->addSeparator();
+    auto* act_about = tray_menu->addAction("About Madí...");
+    connect(act_about, &QAction::triggered, this, &MainWindow::show_about_dialog);
+
+    tray_menu->addSeparator();
+    auto* act_quit = tray_menu->addAction("Quit Madí");
+    connect(act_quit, &QAction::triggered, qApp, &QApplication::quit);
+
+    tray_icon_->setContextMenu(tray_menu);
+
+    connect(tray_icon_, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
+      if (reason == QSystemTrayIcon::Trigger || reason == QSystemTrayIcon::DoubleClick) {
+        if (isMinimized()) {
+          showNormal();
+        }
+        show();
+        raise();
+        activateWindow();
+      }
+    });
+
+    tray_icon_->show();
+  }
+
+  void show_about_dialog() {
+    AboutMadiDialog dlg(this);
+    dlg.exec();
+  }
 
   [[nodiscard]] static QString format_status_hierarchy_path(const QString& raw_path, int max_chars = 38, int max_elements = 3) {
     if (raw_path.isEmpty()) {
@@ -1716,18 +1836,7 @@ private:
       }
     });
     menu_help->addSeparator();
-    menu_help->addAction("About Madí...", this, [this]() {
-      QMessageBox::about(this, "About Madí",
-        "<h3>Madí 1.0.0</h3>"
-        "<p><b>Model, Align & Diagram Interconnects</b></p>"
-        "<p>Named in homage to <b>Madí (Arte Madí, Buenos Aires 1946)</b> — the avant-garde geometric art movement "
-        "renowned for broken canvas frames (<i>marco recortado</i>), linear grids, and articulated spatial structures.</p>"
-        "<p>High-performance open-source 2D diagramming, schematic, and interconnect engine.<br>"
-        "Built with modern C++20 and Qt 6 on Linux (Wayland / X11).</p>"
-        "<p>Features modular hideable toolbars, hierarchical drill-down, 2D CSG boolean operations, parametric control points, "
-        "multi-point arrow routing, and deterministic YAML (<code>.madi</code>) storage.</p>"
-        "<p>Licensed under GNU GPLv3.</p>");
-    });
+    menu_help->addAction("About Madí...", this, &MainWindow::show_about_dialog);
   }
 
   void rebuild_theme_menus() {
@@ -4225,6 +4334,9 @@ public:
   // Command Console Dock
   CommandConsoleDock* console_dock_{nullptr};
   QAction* action_focus_console_{nullptr};
+
+  // System Tray
+  QSystemTrayIcon* tray_icon_{nullptr};
 
   // Docks
   QDockWidget* dock_palette_{nullptr};

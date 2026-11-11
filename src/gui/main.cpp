@@ -6,6 +6,8 @@
 #include "vector/gui/MainWindow.hpp"
 
 #include <QApplication>
+#include <QFile>
+#include <QIcon>
 #include <string_view>
 
 int main(int argc, char* argv[]) {
@@ -14,7 +16,12 @@ int main(int argc, char* argv[]) {
   app.setApplicationDisplayName("Madí - Model, Align & Diagram Interconnects");
   app.setApplicationVersion("1.0.0-alpha");
 
+  QIcon app_icon = vector::gui::MainWindow::create_app_icon();
+  app.setWindowIcon(app_icon);
+  app.setDesktopFileName("madi");
+
   vector::gui::MainWindow window;
+  window.setWindowIcon(app_icon);
 
   if (argc > 1) {
     if (std::string_view(argv[1]) == "--self-test") {

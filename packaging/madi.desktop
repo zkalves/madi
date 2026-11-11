@@ -8,5 +8,5 @@ Icon=madi
 Terminal=false
 Categories=Graphics;Engineering;Science;Development;
 MimeType=application/x-madi;application/x-vector;application/x-drawio;text/yaml;
-StartupWMClass=madi-gui
+StartupWMClass=madi
 Keywords=madi;diagram;schematic;eda;drawing;routing;flowchart;marco-recortado;
