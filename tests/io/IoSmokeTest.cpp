@@ -1,15 +1,15 @@
-// VECTOR - Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing
-// Copyright (C) 2026 VECTOR Contributors
+// Madí - Model, Align & Diagram Interconnects
+// Copyright (C) 2026 Madí Contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "vector/core/GraphModel.hpp"
-#include "vector/io/DrawioParser.hpp"
-#include "vector/io/StorageEngine.hpp"
+#include "madi/core/GraphModel.hpp"
+#include "madi/io/DrawioParser.hpp"
+#include "madi/io/StorageEngine.hpp"
 
 #include <cassert>
 #include <iostream>
 
-using namespace vector;
+using namespace madi;
 
 int main() {
   std::cout << "===> Running IoSmokeTest...\n";
@@ -20,7 +20,7 @@ int main() {
   n1.name = "Root Module \"Alpha\"";
   n1.bounds = {50.0, 50.0, 160.0, 90.0};
   n1.properties["embedded_graph_yaml"] = "# Line 1\nschema_version: 1\nnodes:\n  - id: 10\n    name: \"Sub\"\n";
-  n1.properties["author"] = "VECTOR \"Team\"\nSpecial Line";
+  n1.properties["author"] = "Madí \"Team\"\nSpecial Line";
   const core::NodeId nid1 = orig_model.add_node(std::move(n1));
 
   core::Port p1;

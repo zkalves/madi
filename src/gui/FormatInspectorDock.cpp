@@ -1,1 +1,1 @@
-namespace vector::gui {}
+namespace madi::gui {}

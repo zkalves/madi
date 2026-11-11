@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# VECTOR AppImage Packaging Script
+# Madí AppImage Packaging Script
 # Uses linuxdeploy and linuxdeploy-plugin-qt to produce a standalone AppImage.
 # ==============================================================================
 set -euo pipefail
@@ -11,13 +11,13 @@ BUILD_DIR="${PROJECT_ROOT}/build"
 APP_DIR="${PROJECT_ROOT}/AppDir"
 OUTPUT_DIR="${PROJECT_ROOT}/dist"
 
-echo "===> [AppImage] Building VECTOR standalone bundle..."
+echo "===> [AppImage] Building Madí standalone bundle..."
 
 mkdir -p "${OUTPUT_DIR}"
 rm -rf "${APP_DIR}"
 
 # 1. Ensure CMake project is configured and built
-if [ ! -f "${BUILD_DIR}/madi-gui" ] && [ ! -f "${BUILD_DIR}/vector-gui" ]; then
+if [ ! -f "${BUILD_DIR}/madi-gui" ]; then
     echo "===> [AppImage] Building Madí in ${BUILD_DIR}..."
     cmake -B "${BUILD_DIR}" -S "${PROJECT_ROOT}" \
         -DCMAKE_BUILD_TYPE=Release \
@@ -34,22 +34,11 @@ ICON_SVG="${PROJECT_ROOT}/res/icons/icon.svg"
 if [ ! -f "${ICON_SVG}" ]; then
     ICON_SVG="${PROJECT_ROOT}/res/icons/madi.svg"
 fi
-if [ ! -f "${ICON_SVG}" ]; then
-    ICON_SVG="${PROJECT_ROOT}/res/icons/vector.svg"
-fi
-if [ ! -f "${ICON_SVG}" ]; then
-    ICON_SVG="${PROJECT_ROOT}/packaging/icons/vector.svg"
-fi
 DESKTOP_FILE="${PROJECT_ROOT}/packaging/madi.desktop"
-if [ ! -f "${DESKTOP_FILE}" ]; then
-    DESKTOP_FILE="${PROJECT_ROOT}/packaging/vector.desktop"
-fi
-cp "${DESKTOP_FILE}" "${APP_DIR}/madi.desktop" || cp "${DESKTOP_FILE}" "${APP_DIR}/vector.desktop"
-cp "${ICON_SVG}" "${APP_DIR}/madi.svg" || cp "${ICON_SVG}" "${APP_DIR}/vector.svg"
+cp "${DESKTOP_FILE}" "${APP_DIR}/madi.desktop"
+cp "${ICON_SVG}" "${APP_DIR}/madi.svg"
 if [ -f "${PROJECT_ROOT}/res/icons/256x256/madi.png" ]; then
     cp "${PROJECT_ROOT}/res/icons/256x256/madi.png" "${APP_DIR}/madi.png"
-elif [ -f "${PROJECT_ROOT}/res/icons/256x256/vector.png" ]; then
-    cp "${PROJECT_ROOT}/res/icons/256x256/vector.png" "${APP_DIR}/vector.png"
 fi
 
 # 3. Download linuxdeploy tools if not present
@@ -77,9 +66,6 @@ export QMAKE="${QMAKE:-/usr/bin/qmake6}"
 export EXTRA_QT_PLUGINS="platforms,xcbglintegrations,iconengines,imageformats,styles"
 
 GUI_BIN="${APP_DIR}/usr/bin/madi-gui"
-if [ ! -f "${GUI_BIN}" ]; then
-    GUI_BIN="${APP_DIR}/usr/bin/vector-gui"
-fi
 
 "${LINUXDEPLOY}" \
     --appdir "${APP_DIR}" \
@@ -90,5 +76,5 @@ fi
     --output appimage
 
 # 5. Move generated AppImage to dist/
-mv MADI*.AppImage "${OUTPUT_DIR}/" || mv madi*.AppImage "${OUTPUT_DIR}/" || mv VECTOR*.AppImage "${OUTPUT_DIR}/" || mv vector*.AppImage "${OUTPUT_DIR}/" || true
+mv MADI*.AppImage "${OUTPUT_DIR}/" || mv madi*.AppImage "${OUTPUT_DIR}/" || true
 echo "===> [AppImage] Successfully created AppImage in ${OUTPUT_DIR}/"

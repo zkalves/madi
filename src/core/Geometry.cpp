@@ -1,11 +1,11 @@
-// VECTOR - Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing
-// Copyright (C) 2026 VECTOR Contributors
+// Madí - Model, Align & Diagram Interconnects
+// Copyright (C) 2026 Madí Contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "vector/core/Geometry.hpp"
+#include "madi/core/Geometry.hpp"
 
-namespace vector::core {
+namespace madi::core {
 
 // Explicit instantiation and non-inline geometry helper functions if needed
 
-}  // namespace vector::core
+}  // namespace madi::core

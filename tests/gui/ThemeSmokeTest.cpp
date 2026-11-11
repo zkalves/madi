@@ -1,15 +1,15 @@
-// VECTOR - Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing
-// Copyright (C) 2026 VECTOR Contributors
+// Madí - Model, Align & Diagram Interconnects
+// Copyright (C) 2026 Madí Contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "vector/gui/ThemeManager.hpp"
-#include "vector/gui/IconFactory.hpp"
-#include "vector/gui/SnapGridSettingsDialog.hpp"
-#include "vector/gui/CommandConsoleDock.hpp"
-#include "vector/gui/MainWindow.hpp"
-#include "vector/renderer/CanvasWidget.hpp"
-#include "vector/gui/HierarchyTreeDock.hpp"
-#include "vector/core/GraphModel.hpp"
+#include "madi/gui/ThemeManager.hpp"
+#include "madi/gui/IconFactory.hpp"
+#include "madi/gui/SnapGridSettingsDialog.hpp"
+#include "madi/gui/CommandConsoleDock.hpp"
+#include "madi/gui/MainWindow.hpp"
+#include "madi/renderer/CanvasWidget.hpp"
+#include "madi/gui/HierarchyTreeDock.hpp"
+#include "madi/core/GraphModel.hpp"
 
 #include <QApplication>
 #include <QMouseEvent>
@@ -27,7 +27,7 @@ int main(int argc, char* argv[]) {
 
   std::cout << "===> Starting Theme System & Element Table Smoke Tests..." << std::endl;
 
-  auto& tm = vector::gui::ThemeManager::instance();
+  auto& tm = madi::gui::ThemeManager::instance();
   tm.scan_themes();
 
   // 1. Verify UI Themes Loaded from files
@@ -84,16 +84,16 @@ int main(int argc, char* argv[]) {
   assert(app.styleSheet().contains("QTreeWidget, QTreeWidget#elementTable"));
 
   // 4. Test Diagram Theme on CanvasWidget (All at once vs Selected items only)
-  vector::core::GraphModel graph;
-  vector::renderer::CanvasWidget canvas;
+  madi::core::GraphModel graph;
+  madi::renderer::CanvasWidget canvas;
   canvas.set_graph_model(&graph);
 
-  vector::core::Node n1;
+  madi::core::Node n1;
   n1.name = "Node A";
   n1.bounds = {50.0, 50.0, 100.0, 60.0};
   const auto n1_id = graph.add_node(std::move(n1));
 
-  vector::core::Node n2;
+  madi::core::Node n2;
   n2.name = "Node B";
   n2.bounds = {250.0, 50.0, 100.0, 60.0};
   const auto n2_id = graph.add_node(std::move(n2));
@@ -103,7 +103,7 @@ int main(int argc, char* argv[]) {
   assert(graph.find_node(n1_id)->properties.count("fill_color") == 0);
 
   // Apply theme to entire diagram
-  vector::renderer::CanvasWidget::DiagramStyle style;
+  madi::renderer::CanvasWidget::DiagramStyle style;
   style.canvas_bg = sol_dark_diag->canvas_bg;
   style.page_bg = sol_dark_diag->page_bg;
   style.render_style = sol_dark_diag->to_render_style();
@@ -117,7 +117,7 @@ int main(int argc, char* argv[]) {
   const auto* bp = tm.find_diagram_theme("blueprint");
   assert(bp != nullptr);
 
-  vector::renderer::CanvasWidget::DiagramStyle bp_style;
+  madi::renderer::CanvasWidget::DiagramStyle bp_style;
   bp_style.render_style = bp->to_render_style();
   canvas.apply_theme_to_selection(bp_style);
 
@@ -136,7 +136,7 @@ int main(int argc, char* argv[]) {
   assert(graph.find_node(n2_id)->properties.count("fill_color") == 0);
 
   // 5. Test Element Table (HierarchyTreeDock)
-  vector::gui::HierarchyTreeDock hierarchy_dock;
+  madi::gui::HierarchyTreeDock hierarchy_dock;
   hierarchy_dock.set_graph_model(&graph);
   // Verify tree widget exists and has elementTable object name
   auto* tree = hierarchy_dock.findChild<QTreeWidget*>("elementTable");
@@ -148,24 +148,24 @@ int main(int argc, char* argv[]) {
 
   // 6. Test Snapping Engine Configurability
   std::cout << "Testing Snapping Engine configurability..." << std::endl;
-  vector::grid::GridManager grid_mgr;
+  madi::grid::GridManager grid_mgr;
   assert(grid_mgr.is_snap_enabled());
-  assert(grid_mgr.snap_strength() == vector::grid::SnapStrength::Normal);
+  assert(grid_mgr.snap_strength() == madi::grid::SnapStrength::Normal);
   assert(grid_mgr.snap_tolerance() == 6.0);
 
-  grid_mgr.set_snap_strength(vector::grid::SnapStrength::Weak);
+  grid_mgr.set_snap_strength(madi::grid::SnapStrength::Weak);
   assert(grid_mgr.snap_tolerance() == 3.0);
 
-  grid_mgr.set_snap_strength(vector::grid::SnapStrength::Strong);
+  grid_mgr.set_snap_strength(madi::grid::SnapStrength::Strong);
   assert(grid_mgr.snap_tolerance() == 12.0);
 
-  grid_mgr.set_snap_strength(vector::grid::SnapStrength::Off);
+  grid_mgr.set_snap_strength(madi::grid::SnapStrength::Off);
   assert(!grid_mgr.is_snap_enabled());
   assert(grid_mgr.snap_tolerance() == 0.0);
 
   grid_mgr.set_snap_tolerance(4.5);
   assert(grid_mgr.is_snap_enabled());
-  assert(grid_mgr.snap_strength() == vector::grid::SnapStrength::Custom);
+  assert(grid_mgr.snap_strength() == madi::grid::SnapStrength::Custom);
   assert(grid_mgr.snap_tolerance() == 4.5);
 
   auto snap_close = grid_mgr.snap_to_grid_if_close({21.0, 20.5});
@@ -178,13 +178,13 @@ int main(int argc, char* argv[]) {
 
   // 7. Test Hierarchical Subsystem (Created Empty, Default Rectangle Symbol & Auto Port Sync)
   std::cout << "Testing Hierarchical Subsystem empty creation & auto port sync..." << std::endl;
-  vector::core::HierarchyContext hierarchy_ctx(&graph);
+  madi::core::HierarchyContext hierarchy_ctx(&graph);
   canvas.set_hierarchy_context(&hierarchy_ctx);
 
   const auto sub_id = canvas.add_subsystem({500.0, 500.0}, "ALU");
   const auto* sub_node = graph.find_node(sub_id);
   assert(sub_node != nullptr);
-  assert(sub_node->shape == vector::core::ShapeType::HierarchicalBlock);
+  assert(sub_node->shape == madi::core::ShapeType::HierarchicalBlock);
   assert(sub_node->bounds.width >= 140.0);
   assert(sub_node->bounds.height >= 100.0);
 
@@ -211,7 +211,7 @@ int main(int argc, char* argv[]) {
   const auto* sym_p1 = graph.find_port(sub_node->port_ids[0]);
   assert(sym_p1 != nullptr);
   assert(sym_p1->name == "data_a");
-  assert(sym_p1->direction == vector::core::PortDirection::West);
+  assert(sym_p1->direction == madi::core::PortDirection::West);
   assert(sym_p1->local_anchor.x == 0.0);
   (void)sym_p1;
 
@@ -226,7 +226,7 @@ int main(int argc, char* argv[]) {
   const auto* sym_p2 = graph.find_port(sub_node->port_ids[1]);
   assert(sym_p2 != nullptr);
   assert(sym_p2->name == "result");
-  assert(sym_p2->direction == vector::core::PortDirection::East);
+  assert(sym_p2->direction == madi::core::PortDirection::East);
   assert(sym_p2->local_anchor.x == 1.0);
   (void)sym_p2;
 
@@ -240,95 +240,95 @@ int main(int argc, char* argv[]) {
   // 9. Test Tool Icon Generation & Mouse Hover Tooltip Requirements
   std::cout << "===> Testing Tool Icons and Tooltip Specs..." << std::endl;
   const QColor test_fg(205, 214, 244);
-  const std::vector<vector::gui::IconFactory::IconType> all_icon_types = {
-    vector::gui::IconFactory::IconType::Select,
-    vector::gui::IconFactory::IconType::Rectangle,
-    vector::gui::IconFactory::IconType::RoundedRect,
-    vector::gui::IconFactory::IconType::Ellipse,
-    vector::gui::IconFactory::IconType::PolygonHex,
-    vector::gui::IconFactory::IconType::Triangle,
-    vector::gui::IconFactory::IconType::Diamond,
-    vector::gui::IconFactory::IconType::Octagon,
-    vector::gui::IconFactory::IconType::SubsystemBlock,
-    vector::gui::IconFactory::IconType::SubsystemFile,
-    vector::gui::IconFactory::IconType::InputPort,
-    vector::gui::IconFactory::IconType::OutputPort,
-    vector::gui::IconFactory::IconType::Wire,
-    vector::gui::IconFactory::IconType::MergeFigures,
-    vector::gui::IconFactory::IconType::SplitFigure,
-    vector::gui::IconFactory::IconType::Undo,
-    vector::gui::IconFactory::IconType::Redo,
-    vector::gui::IconFactory::IconType::Delete,
-    vector::gui::IconFactory::IconType::ZoomIn,
-    vector::gui::IconFactory::IconType::ZoomOut,
-    vector::gui::IconFactory::IconType::FitContent,
-    vector::gui::IconFactory::IconType::ShowGrid,
-    vector::gui::IconFactory::IconType::Snapping,
-    vector::gui::IconFactory::IconType::DrillDown,
-    vector::gui::IconFactory::IconType::PopScope
+  const std::vector<madi::gui::IconFactory::IconType> all_icon_types = {
+    madi::gui::IconFactory::IconType::Select,
+    madi::gui::IconFactory::IconType::Rectangle,
+    madi::gui::IconFactory::IconType::RoundedRect,
+    madi::gui::IconFactory::IconType::Ellipse,
+    madi::gui::IconFactory::IconType::PolygonHex,
+    madi::gui::IconFactory::IconType::Triangle,
+    madi::gui::IconFactory::IconType::Diamond,
+    madi::gui::IconFactory::IconType::Octagon,
+    madi::gui::IconFactory::IconType::SubsystemBlock,
+    madi::gui::IconFactory::IconType::SubsystemFile,
+    madi::gui::IconFactory::IconType::InputPort,
+    madi::gui::IconFactory::IconType::OutputPort,
+    madi::gui::IconFactory::IconType::Wire,
+    madi::gui::IconFactory::IconType::MergeFigures,
+    madi::gui::IconFactory::IconType::SplitFigure,
+    madi::gui::IconFactory::IconType::Undo,
+    madi::gui::IconFactory::IconType::Redo,
+    madi::gui::IconFactory::IconType::Delete,
+    madi::gui::IconFactory::IconType::ZoomIn,
+    madi::gui::IconFactory::IconType::ZoomOut,
+    madi::gui::IconFactory::IconType::FitContent,
+    madi::gui::IconFactory::IconType::ShowGrid,
+    madi::gui::IconFactory::IconType::Snapping,
+    madi::gui::IconFactory::IconType::DrillDown,
+    madi::gui::IconFactory::IconType::PopScope
   };
 
   for (auto itype : all_icon_types) {
-    QPixmap pm = vector::gui::IconFactory::render_pixmap(itype, test_fg, 48);
+    QPixmap pm = madi::gui::IconFactory::render_pixmap(itype, test_fg, 48);
     assert(!pm.isNull());
     assert(pm.width() == 48);
     assert(pm.height() == 48);
 
-    QIcon ic = vector::gui::IconFactory::create_icon(itype, test_fg);
+    QIcon ic = madi::gui::IconFactory::create_icon(itype, test_fg);
     assert(!ic.isNull());
     assert(!ic.pixmap(24, 24).isNull());
   }
 
   // 10. Test Multi-Part Alignment for Boxes of Slightly Different Sizes
   std::cout << "===> Testing Multi-Part Alignment for Slightly Different Sized Boxes..." << std::endl;
-  vector::grid::GridManager gm;
-  gm.set_snap_strength(vector::grid::SnapStrength::Normal); // 6 px tolerance
+  madi::grid::GridManager gm;
+  gm.set_snap_strength(madi::grid::SnapStrength::Normal); // 6 px tolerance
   canvas.set_grid_manager(&gm);
 
   // Box A (reference): width 100, height 100 at (100, 100)
   // Left = 100, Center = 150, Right = 200
-  vector::core::Node box_a;
+  madi::core::Node box_a;
   box_a.name = "Box A";
   box_a.bounds = {100.0, 100.0, 100.0, 100.0};
   const auto box_a_id = graph.add_node(std::move(box_a));
   (void)box_a_id;
 
   // Box B (dragged): width 104, height 104 (different size!)
-  vector::core::Node box_b;
+  madi::core::Node box_b;
   box_b.name = "Box B";
   box_b.bounds = {250.0, 100.0, 104.0, 104.0};
   const auto box_b_id = graph.add_node(std::move(box_b));
 
   // Case 1: Proposed near left border (x=100.4) -> snaps left border
-  vector::core::Rect2d prop_left = {100.4, 100.0, 104.0, 104.0};
-  vector::core::Vec2d off_left = canvas.compute_smart_alignment(box_b_id, prop_left);
+  madi::core::Rect2d prop_left = {100.4, 100.0, 104.0, 104.0};
+  madi::core::Vec2d off_left = canvas.compute_smart_alignment(box_b_id, prop_left);
   assert(std::abs(off_left.x - (-0.4)) < 1e-3);
   assert(std::abs((prop_left.x + off_left.x) - 100.0) < 1e-3);
   (void)off_left;
 
   // Case 2: User moves towards center alignment: Box B center approaching 150 (x = 150 - 52 = 98)
   // At x=97.9, center is 149.9 (dist 0.1 to center, dist 2.1 to left, dist 1.9 to right)
-  vector::core::Rect2d prop_center = {97.9, 100.0, 104.0, 104.0};
-  vector::core::Vec2d off_center = canvas.compute_smart_alignment(box_b_id, prop_center);
+  madi::core::Rect2d prop_center = {97.9, 100.0, 104.0, 104.0};
+  madi::core::Vec2d off_center = canvas.compute_smart_alignment(box_b_id, prop_center);
   assert(std::abs((prop_center.center().x + off_center.x) - 150.0) < 1e-3);
   (void)off_center;
 
   // Case 3: User moves towards right border alignment: Box B right approaching 200 (x = 200 - 104 = 96)
   // At x=96.1, right is 200.1 (dist 0.1 to right, dist 1.9 to center, dist 3.9 to left)
-  vector::core::Rect2d prop_right = {96.1, 100.0, 104.0, 104.0};
-  vector::core::Vec2d off_right = canvas.compute_smart_alignment(box_b_id, prop_right);
+  madi::core::Rect2d prop_right = {96.1, 100.0, 104.0, 104.0};
+  madi::core::Vec2d off_right = canvas.compute_smart_alignment(box_b_id, prop_right);
   assert(std::abs((prop_right.right() + off_right.x) - 200.0) < 1e-3);
   (void)off_right;
 
   // Case 4: User moves away (x=80.0, all distances > 6px) -> zero snap, moves freely!
-  vector::core::Rect2d prop_away = {80.0, 100.0, 104.0, 104.0};
-  vector::core::Vec2d off_away = canvas.compute_smart_alignment(box_b_id, prop_away);
+  madi::core::Rect2d prop_away = {80.0, 100.0, 104.0, 104.0};
+  madi::core::Vec2d off_away = canvas.compute_smart_alignment(box_b_id, prop_away);
   assert(std::abs(off_away.x) < 1e-4 && std::abs(off_away.y) < 1e-4);
   (void)off_away;
 
   // Case 5: Side-by-side abutting (Box B left at 200.8, Box A right at 200.0)
-  vector::core::Rect2d prop_abut = {200.8, 100.0, 104.0, 104.0};
-  vector::core::Vec2d off_abut = canvas.compute_smart_alignment(box_b_id, prop_abut);
+  madi::core::Rect2d prop_abut = {200.8, 100.0, 104.0, 104.0};
+  madi::core::Vec2d off_abut = canvas.compute_smart_alignment(box_b_id, prop_abut);
   assert(std::abs((prop_abut.x + off_abut.x) - 200.0) < 1e-3);
   (void)off_abut;
 
@@ -338,8 +338,8 @@ int main(int argc, char* argv[]) {
   // Box B is at {250.0, 100.0, 104.0, 104.0}
   // Case A: Resizing Box B left edge towards Box A right edge (200.0)
   // Proposed bounds: left at 200.5, right fixed at 354.0 (width = 153.5)
-  vector::core::Rect2d resize_left = {200.5, 100.0, 153.5, 104.0};
-  canvas.compute_resize_alignment(box_b_id, vector::renderer::HandleType::MiddleLeft, resize_left);
+  madi::core::Rect2d resize_left = {200.5, 100.0, 153.5, 104.0};
+  canvas.compute_resize_alignment(box_b_id, madi::renderer::HandleType::MiddleLeft, resize_left);
   // Verify snapped to 200.0 and width adjusted to 154.0
   assert(std::abs(resize_left.x - 200.0) < 1e-3);
   assert(std::abs(resize_left.width - 154.0) < 1e-3);
@@ -348,13 +348,13 @@ int main(int argc, char* argv[]) {
   assert(std::abs(canvas.active_smart_guides()[0].p1.x - 200.0) < 1e-3);
 
   // Case B: Resizing using BottomRight corner towards Box A right (200.0) and bottom (200.0)
-  vector::core::Node box_c;
+  madi::core::Node box_c;
   box_c.name = "Box C";
   box_c.bounds = {50.0, 50.0, 50.0, 50.0};
   const auto box_c_id = graph.add_node(std::move(box_c));
 
-  vector::core::Rect2d resize_corner = {50.0, 50.0, 149.2, 151.3}; // right=199.2 (close to 200), bot=201.3 (close to 200)
-  canvas.compute_resize_alignment(box_c_id, vector::renderer::HandleType::BottomRight, resize_corner);
+  madi::core::Rect2d resize_corner = {50.0, 50.0, 149.2, 151.3}; // right=199.2 (close to 200), bot=201.3 (close to 200)
+  canvas.compute_resize_alignment(box_c_id, madi::renderer::HandleType::BottomRight, resize_corner);
   assert(std::abs(resize_corner.right() - 200.0) < 1e-3);
   assert(std::abs(resize_corner.bottom() - 200.0) < 1e-3);
   assert(canvas.active_smart_guides().size() == 2);
@@ -367,15 +367,15 @@ int main(int argc, char* argv[]) {
   (void)found_v; (void)found_h;
 
   // Case C: Resizing far away (> 6px snap distance) -> no guide lines, bounds unchanged
-  vector::core::Rect2d resize_away = {50.0, 50.0, 115.0, 115.0}; // right=165, bot=165 (far from 100, 150, 200)
-  canvas.compute_resize_alignment(box_c_id, vector::renderer::HandleType::BottomRight, resize_away);
+  madi::core::Rect2d resize_away = {50.0, 50.0, 115.0, 115.0}; // right=165, bot=165 (far from 100, 150, 200)
+  canvas.compute_resize_alignment(box_c_id, madi::renderer::HandleType::BottomRight, resize_away);
   assert(canvas.active_smart_guides().empty());
   assert(std::abs(resize_away.width - 115.0) < 1e-3);
   assert(std::abs(resize_away.height - 115.0) < 1e-3);
 
   // 12. Test Advanced Snap & Grid Settings (Independent Spacing, Snap Types, Dialog & Commands)
   std::cout << "===> Testing Advanced Snap & Grid Settings (Independent Spacing, Snap Types, Dialog & Commands)..." << std::endl;
-  vector::grid::GridManager adv_grid;
+  madi::grid::GridManager adv_grid;
   // Test Independent Snap Spacing
   adv_grid.set_snap_spacing(10.0, 25.0);
   assert(adv_grid.snap_spacing_x() == 10.0);
@@ -387,28 +387,28 @@ int main(int argc, char* argv[]) {
   (void)snap_indep;
 
   // Test Isometric Snap Type
-  adv_grid.set_snap_type(vector::grid::SnapType::Isometric);
-  assert(adv_grid.snap_type() == vector::grid::SnapType::Isometric);
+  adv_grid.set_snap_type(madi::grid::SnapType::Isometric);
+  assert(adv_grid.snap_type() == madi::grid::SnapType::Isometric);
   auto snap_iso = adv_grid.snap_to_grid({10.0, 10.0});
   (void)snap_iso;
 
   // Test Polar Snap Type
-  adv_grid.set_snap_type(vector::grid::SnapType::Polar);
+  adv_grid.set_snap_type(madi::grid::SnapType::Polar);
   adv_grid.set_polar_angle_deg(45.0);
-  assert(adv_grid.snap_type() == vector::grid::SnapType::Polar);
+  assert(adv_grid.snap_type() == madi::grid::SnapType::Polar);
   assert(adv_grid.polar_angle_deg() == 45.0);
   auto snap_polar = adv_grid.snap_to_grid({10.0, 1.0}); // angle close to 0 rad
   assert(std::abs(snap_polar.y) < 1e-4); // snapped to horizontal 0-deg axis!
   (void)snap_polar;
 
   // Test Grid Spacing Mode (Fixed vs Variable)
-  adv_grid.set_grid_spacing_mode(vector::grid::GridSpacingMode::Fixed);
-  assert(adv_grid.grid_spacing_mode() == vector::grid::GridSpacingMode::Fixed);
-  adv_grid.set_grid_spacing_mode(vector::grid::GridSpacingMode::Variable);
-  assert(adv_grid.grid_spacing_mode() == vector::grid::GridSpacingMode::Variable);
+  adv_grid.set_grid_spacing_mode(madi::grid::GridSpacingMode::Fixed);
+  assert(adv_grid.grid_spacing_mode() == madi::grid::GridSpacingMode::Fixed);
+  adv_grid.set_grid_spacing_mode(madi::grid::GridSpacingMode::Variable);
+  assert(adv_grid.grid_spacing_mode() == madi::grid::GridSpacingMode::Variable);
 
   // Test SnapGridSettingsDialog
-  vector::gui::SnapGridSettingsDialog snap_dlg;
+  madi::gui::SnapGridSettingsDialog snap_dlg;
   snap_dlg.load_from(adv_grid, true);
   assert(snap_dlg.chk_enable_snap_->isChecked());
   bool smart_guides_applied = false;
@@ -417,7 +417,7 @@ int main(int argc, char* argv[]) {
   assert(adv_grid.is_snap_enabled());
 
   // Test CommandConsoleDock snap, snapunit, and dsettings commands
-  vector::gui::CommandConsoleDock console;
+  madi::gui::CommandConsoleDock console;
   console.set_canvas(&canvas);
   console.set_grid_manager(&adv_grid);
   int settings_tab_opened = -1;
@@ -447,31 +447,31 @@ int main(int argc, char* argv[]) {
 
   // 13. Test Grid Snapping on Moving and Resizing
   std::cout << "===> Testing Grid Snapping on Moving and Resizing..." << std::endl;
-  vector::grid::GridManager grid_snap_mgr;
-  grid_snap_mgr.set_snap_flags(vector::grid::SnapFlags::Grid); // Only Grid snap enabled
+  madi::grid::GridManager grid_snap_mgr;
+  grid_snap_mgr.set_snap_flags(madi::grid::SnapFlags::Grid); // Only Grid snap enabled
   grid_snap_mgr.set_snap_spacing(20.0, 20.0);
   grid_snap_mgr.set_snap_tolerance(6.0);
   canvas.set_grid_manager(&grid_snap_mgr);
 
   // Proposed node bounds near grid line (x=101.5, y=98.8 -> grid line is 100.0, 100.0)
-  vector::core::Rect2d move_near_grid = {101.5, 98.8, 50.0, 50.0};
-  vector::core::Vec2d grid_off = canvas.compute_smart_alignment(box_c_id, move_near_grid);
+  madi::core::Rect2d move_near_grid = {101.5, 98.8, 50.0, 50.0};
+  madi::core::Vec2d grid_off = canvas.compute_smart_alignment(box_c_id, move_near_grid);
   assert(std::abs((move_near_grid.x + grid_off.x) - 100.0) < 1e-4);
   assert(std::abs((move_near_grid.y + grid_off.y) - 100.0) < 1e-4);
   (void)grid_off;
 
   // Resize edge near grid line (right edge is at 158.5 -> nearest grid line is 160.0)
-  vector::core::Rect2d resize_near_grid = {100.0, 100.0, 58.5, 50.0};
-  canvas.compute_resize_alignment(box_c_id, vector::renderer::HandleType::MiddleRight, resize_near_grid);
+  madi::core::Rect2d resize_near_grid = {100.0, 100.0, 58.5, 50.0};
+  canvas.compute_resize_alignment(box_c_id, madi::renderer::HandleType::MiddleRight, resize_near_grid);
   assert(std::abs(resize_near_grid.right() - 160.0) < 1e-4);
 
   // 14. Test Both Sides Alignment Lines when Dimensions Match Other Object
   std::cout << "===> Testing Both Sides Alignment Lines on Match..." << std::endl;
-  grid_snap_mgr.set_snap_flags(vector::grid::SnapFlags::All);
+  grid_snap_mgr.set_snap_flags(madi::grid::SnapFlags::All);
   // Box A is at {100.0, 100.0, 100.0, 100.0} (Left=100, Right=200)
   // Box with left at 100.0, user drags right handle towards 200.0
-  vector::core::Rect2d resize_both_sides = {100.0, 250.0, 99.2, 50.0}; // right=199.2 (near 200.0)
-  canvas.compute_resize_alignment(box_c_id, vector::renderer::HandleType::MiddleRight, resize_both_sides);
+  madi::core::Rect2d resize_both_sides = {100.0, 250.0, 99.2, 50.0}; // right=199.2 (near 200.0)
+  canvas.compute_resize_alignment(box_c_id, madi::renderer::HandleType::MiddleRight, resize_both_sides);
   // Verify right edge snapped to 200.0 and left edge remains aligned at 100.0
   assert(std::abs(resize_both_sides.right() - 200.0) < 1e-3);
   assert(std::abs(resize_both_sides.x - 100.0) < 1e-3);
@@ -487,22 +487,22 @@ int main(int argc, char* argv[]) {
 
   // 15. Test Page Size Selection, Orientation, Margins & Sheet Display
   std::cout << "===> Testing Page Size Selection, Presets & Margins..." << std::endl;
-  canvas.set_page_preset(vector::renderer::PagePreset::A4, vector::renderer::PageOrientation::Landscape);
-  assert(canvas.page_preset() == vector::renderer::PagePreset::A4);
-  assert(canvas.page_orientation() == vector::renderer::PageOrientation::Landscape);
+  canvas.set_page_preset(madi::renderer::PagePreset::A4, madi::renderer::PageOrientation::Landscape);
+  assert(canvas.page_preset() == madi::renderer::PagePreset::A4);
+  assert(canvas.page_orientation() == madi::renderer::PageOrientation::Landscape);
   assert(std::abs(canvas.page_bounds().width - 1169.0) < 1e-3);
   assert(std::abs(canvas.page_bounds().height - 827.0) < 1e-3);
 
-  canvas.set_page_orientation(vector::renderer::PageOrientation::Portrait);
-  assert(canvas.page_orientation() == vector::renderer::PageOrientation::Portrait);
+  canvas.set_page_orientation(madi::renderer::PageOrientation::Portrait);
+  assert(canvas.page_orientation() == madi::renderer::PageOrientation::Portrait);
   assert(std::abs(canvas.page_bounds().width - 827.0) < 1e-3);
   assert(std::abs(canvas.page_bounds().height - 1169.0) < 1e-3);
 
   canvas.set_page_size(1500.0, 950.0);
-  assert(canvas.page_preset() == vector::renderer::PagePreset::Custom);
+  assert(canvas.page_preset() == madi::renderer::PagePreset::Custom);
   assert(std::abs(canvas.page_bounds().width - 1500.0) < 1e-3);
   assert(std::abs(canvas.page_bounds().height - 950.0) < 1e-3);
-  assert(canvas.page_orientation() == vector::renderer::PageOrientation::Landscape);
+  assert(canvas.page_orientation() == madi::renderer::PageOrientation::Landscape);
 
   canvas.set_page_margin(35.0);
   assert(std::abs(canvas.page_margin() - 35.0) < 1e-3);
@@ -519,27 +519,27 @@ int main(int argc, char* argv[]) {
   assert(std::abs(snap_dlg.spin_page_margin_->value() - 35.0) < 1e-3);
   assert(snap_dlg.chk_show_page_sheet_->isChecked());
 
-  int a3_idx = snap_dlg.combo_page_preset_->findData(static_cast<int>(vector::renderer::PagePreset::A3));
+  int a3_idx = snap_dlg.combo_page_preset_->findData(static_cast<int>(madi::renderer::PagePreset::A3));
   assert(a3_idx >= 0);
   snap_dlg.combo_page_preset_->setCurrentIndex(a3_idx);
   snap_dlg.rb_orient_landscape_->setChecked(true);
   snap_dlg.apply_to(adv_grid, smart_guides_applied, &canvas);
-  assert(canvas.page_preset() == vector::renderer::PagePreset::A3);
-  assert(canvas.page_orientation() == vector::renderer::PageOrientation::Landscape);
+  assert(canvas.page_preset() == madi::renderer::PagePreset::A3);
+  assert(canvas.page_orientation() == madi::renderer::PageOrientation::Landscape);
   assert(std::abs(canvas.page_bounds().width - 1654.0) < 1e-3);
   assert(std::abs(canvas.page_bounds().height - 1169.0) < 1e-3);
 
   // Test Console Commands for Page Size and Margin
   input_line->setText("pagesize letter portrait");
   QMetaObject::invokeMethod(input_line, "returnPressed");
-  assert(canvas.page_preset() == vector::renderer::PagePreset::Letter);
-  assert(canvas.page_orientation() == vector::renderer::PageOrientation::Portrait);
+  assert(canvas.page_preset() == madi::renderer::PagePreset::Letter);
+  assert(canvas.page_orientation() == madi::renderer::PageOrientation::Portrait);
   assert(std::abs(canvas.page_bounds().width - 850.0) < 1e-3);
   assert(std::abs(canvas.page_bounds().height - 1100.0) < 1e-3);
 
   input_line->setText("pagesize 1800 1200");
   QMetaObject::invokeMethod(input_line, "returnPressed");
-  assert(canvas.page_preset() == vector::renderer::PagePreset::Custom);
+  assert(canvas.page_preset() == madi::renderer::PagePreset::Custom);
   assert(std::abs(canvas.page_bounds().width - 1800.0) < 1e-3);
   assert(std::abs(canvas.page_bounds().height - 1200.0) < 1e-3);
 
@@ -571,22 +571,22 @@ int main(int argc, char* argv[]) {
 
   // 17. Test Block Selection Color Preservation (Selected block background must NOT turn white)
   std::cout << "===> Testing Block Selection Background Color Preservation..." << std::endl;
-  vector::renderer::CanvasRenderer test_renderer;
+  madi::renderer::CanvasRenderer test_renderer;
   test_renderer.initialize_software(400, 300);
-  vector::renderer::RenderContext test_ctx;
+  madi::renderer::RenderContext test_ctx;
   test_ctx.viewport_width = 400;
   test_ctx.viewport_height = 300;
-  test_ctx.world_to_screen = vector::core::Transform2d{1.0, 0.0, 0.0, 0.0, 1.0, 0.0};
+  test_ctx.world_to_screen = madi::core::Transform2d{1.0, 0.0, 0.0, 0.0, 1.0, 0.0};
   test_ctx.screen_to_world = test_ctx.world_to_screen;
   test_ctx.visible_frustum = {0.0, 0.0, 400.0, 300.0};
   test_ctx.zoom = 1.0;
 
   // Render Solarized Dark style
-  vector::renderer::RenderStyle sol_style = sol_dark_diag->to_render_style();
+  madi::renderer::RenderStyle sol_style = sol_dark_diag->to_render_style();
   assert(sol_style.fill_color == sol_dark_diag->node_fill); // Solarized Dark node fill
 
   // Case A: Block selected with theme default fill color (no property override)
-  vector::core::Node sel_block_theme;
+  madi::core::Node sel_block_theme;
   sel_block_theme.name = "Theme Block";
   sel_block_theme.bounds = {100.0, 100.0, 100.0, 60.0};
   sel_block_theme.selected = true; // Selected!
@@ -603,7 +603,7 @@ int main(int argc, char* argv[]) {
   (void)center_pixel_theme;
 
   // Case B: Block selected with custom configured fill color (property override)
-  vector::core::Node sel_block_custom;
+  madi::core::Node sel_block_custom;
   sel_block_custom.name = "Custom Color Block";
   sel_block_custom.bounds = {100.0, 100.0, 100.0, 60.0};
   sel_block_custom.properties["fill_color"] = "#E06C75";
@@ -619,9 +619,9 @@ int main(int argc, char* argv[]) {
   (void)center_pixel_custom;
 
   // Case C: HierarchicalBlock selected
-  vector::core::Node sel_hblock;
+  madi::core::Node sel_hblock;
   sel_hblock.name = "Subsystem 1";
-  sel_hblock.shape = vector::core::ShapeType::HierarchicalBlock;
+  sel_hblock.shape = madi::core::ShapeType::HierarchicalBlock;
   sel_hblock.bounds = {100.0, 100.0, 100.0, 60.0};
   sel_hblock.selected = true;
 
@@ -637,10 +637,10 @@ int main(int argc, char* argv[]) {
 
   // 18. Test Window Positions, Layout, Themes, Colours & Settings Persistence ("if user accepts")
   std::cout << "===> Testing Session Persistence (Window Positions, Layout, Colors & Themes)..." << std::endl;
-  QSettings test_settings("VECTOR_Test", "SessionPersistenceTest");
+  QSettings test_settings("MADI_Test", "SessionPersistenceTest");
   test_settings.clear();
 
-  vector::gui::MainWindow win_session;
+  madi::gui::MainWindow win_session;
 
   // A: Initially, unprompted and not accepted
   assert(!win_session.is_remember_settings_prompted(&test_settings));
@@ -660,11 +660,11 @@ int main(int argc, char* argv[]) {
   win_session.resize(1450, 920);
   tm.set_active_ui_theme("solarized-light");
   tm.set_active_diagram_theme("solarized-light");
-  win_session.canvas()->set_page_preset(vector::renderer::PagePreset::A3, vector::renderer::PageOrientation::Landscape);
+  win_session.canvas()->set_page_preset(madi::renderer::PagePreset::A3, madi::renderer::PageOrientation::Landscape);
   win_session.canvas()->set_page_margin(31.5);
   win_session.canvas()->set_show_rulers(false);
-  win_session.grid_manager()->set_snap_strength(vector::grid::SnapStrength::Strong);
-  win_session.grid_manager()->set_snap_type(vector::grid::SnapType::Isometric);
+  win_session.grid_manager()->set_snap_strength(madi::grid::SnapStrength::Strong);
+  win_session.grid_manager()->set_snap_type(madi::grid::SnapType::Isometric);
 
   // Save settings
   win_session.save_settings(&test_settings);
@@ -672,24 +672,24 @@ int main(int argc, char* argv[]) {
   assert(test_settings.contains("Window/state"));
   assert(test_settings.value("Theme/ui_theme").toString() == "solarized-light");
   assert(test_settings.value("Theme/diagram_theme").toString() == "solarized-light");
-  assert(test_settings.value("Page/preset").toInt() == static_cast<int>(vector::renderer::PagePreset::A3));
+  assert(test_settings.value("Page/preset").toInt() == static_cast<int>(madi::renderer::PagePreset::A3));
   assert(std::abs(test_settings.value("Page/margin").toDouble() - 31.5) < 1e-3);
   assert(test_settings.value("Canvas/show_rulers").toBool() == false);
-  assert(test_settings.value("SnapGrid/snap_strength").toInt() == static_cast<int>(vector::grid::SnapStrength::Strong));
-  assert(test_settings.value("SnapGrid/snap_type").toInt() == static_cast<int>(vector::grid::SnapType::Isometric));
+  assert(test_settings.value("SnapGrid/snap_strength").toInt() == static_cast<int>(madi::grid::SnapStrength::Strong));
+  assert(test_settings.value("SnapGrid/snap_type").toInt() == static_cast<int>(madi::grid::SnapType::Isometric));
 
   // E: Restore into a new MainWindow instance
-  vector::gui::MainWindow win_restored;
+  madi::gui::MainWindow win_restored;
   win_restored.restore_settings(&test_settings);
 
   assert(tm.current_ui_theme().id == "solarized-light");
   assert(tm.current_diagram_theme().id == "solarized-light");
-  assert(win_restored.canvas()->page_preset() == vector::renderer::PagePreset::A3);
-  assert(win_restored.canvas()->page_orientation() == vector::renderer::PageOrientation::Landscape);
+  assert(win_restored.canvas()->page_preset() == madi::renderer::PagePreset::A3);
+  assert(win_restored.canvas()->page_orientation() == madi::renderer::PageOrientation::Landscape);
   assert(std::abs(win_restored.canvas()->page_margin() - 31.5) < 1e-3);
   assert(!win_restored.canvas()->show_rulers());
-  assert(win_restored.grid_manager()->snap_strength() == vector::grid::SnapStrength::Strong);
-  assert(win_restored.grid_manager()->snap_type() == vector::grid::SnapType::Isometric);
+  assert(win_restored.grid_manager()->snap_strength() == madi::grid::SnapStrength::Strong);
+  assert(win_restored.grid_manager()->snap_type() == madi::grid::SnapType::Isometric);
 
   // F: Test Reset Layout
   win_restored.reset_layout();
@@ -724,18 +724,18 @@ int main(int argc, char* argv[]) {
   // 21. Test Exact 2D Boolean Logic Operations (OR/Union, AND/Intersection, SUBTRACT/Difference, XOR)
   std::cout << "===> Testing 2D Boolean Logic Operations (Union/OR, Intersection/AND, Subtract, XOR)..." << std::endl;
   {
-    vector::core::GraphModel bool_graph;
-    vector::renderer::CanvasWidget bool_canvas;
+    madi::core::GraphModel bool_graph;
+    madi::renderer::CanvasWidget bool_canvas;
     bool_canvas.set_graph_model(&bool_graph);
 
     // Box 1: (0, 0, 100, 100)
-    vector::core::Node b1;
+    madi::core::Node b1;
     b1.name = "Box 1";
     b1.bounds = {0.0, 0.0, 100.0, 100.0};
     const auto id1 = bool_graph.add_node(std::move(b1));
 
     // Box 2: (50, 50, 100, 100) - Overlapping
-    vector::core::Node b2;
+    madi::core::Node b2;
     b2.name = "Box 2";
     b2.bounds = {50.0, 50.0, 100.0, 100.0};
     const auto id2 = bool_graph.add_node(std::move(b2));
@@ -745,7 +745,7 @@ int main(int argc, char* argv[]) {
     bool_canvas.select_node(id2, false);
     assert(bool_canvas.can_merge_selected());
 
-    bool ok_union = bool_canvas.boolean_combine_selected(vector::core::BooleanOp::Union);
+    bool ok_union = bool_canvas.boolean_combine_selected(madi::core::BooleanOp::Union);
     assert(ok_union);
     (void)ok_union;
     assert(bool_graph.node_count() == 1);
@@ -754,7 +754,7 @@ int main(int argc, char* argv[]) {
     assert(merged != nullptr);
     assert(merged->bounds.x == 0.0 && merged->bounds.y == 0.0);
     assert(merged->bounds.width == 150.0 && merged->bounds.height == 150.0);
-    assert(merged->shape == vector::core::ShapeType::CustomPolygon);
+    assert(merged->shape == madi::core::ShapeType::CustomPolygon);
     assert(merged->properties.at("boolean_op") == "union");
 
     // The union of two overlapping rectangles has 8 vertices (L-shaped perimeter).
@@ -789,7 +789,7 @@ int main(int argc, char* argv[]) {
     // Case C: Boolean AND / Intersection
     bool_canvas.select_node(restored_sel[0], true);
     bool_canvas.select_node(restored_sel[1], false);
-    bool ok_and = bool_canvas.boolean_combine_selected(vector::core::BooleanOp::Intersection);
+    bool ok_and = bool_canvas.boolean_combine_selected(madi::core::BooleanOp::Intersection);
     assert(ok_and);
     (void)ok_and;
     assert(bool_graph.node_count() == 1);
@@ -805,19 +805,19 @@ int main(int argc, char* argv[]) {
 
     // Case D: Boolean Difference (Subtract)
     bool_graph.clear();
-    vector::core::Node diff_a;
+    madi::core::Node diff_a;
     diff_a.name = "Base Rect";
     diff_a.bounds = {0.0, 0.0, 100.0, 100.0};
     const auto da_id = bool_graph.add_node(std::move(diff_a));
 
-    vector::core::Node diff_b;
+    madi::core::Node diff_b;
     diff_b.name = "Cutter Rect";
     diff_b.bounds = {50.0, 50.0, 100.0, 100.0};
     const auto db_id = bool_graph.add_node(std::move(diff_b));
 
     bool_canvas.select_node(da_id, true);
     bool_canvas.select_node(db_id, false);
-    bool ok_sub = bool_canvas.boolean_combine_selected(vector::core::BooleanOp::Difference);
+    bool ok_sub = bool_canvas.boolean_combine_selected(madi::core::BooleanOp::Difference);
     assert(ok_sub);
     (void)ok_sub;
     assert(bool_graph.node_count() == 1);
@@ -833,19 +833,19 @@ int main(int argc, char* argv[]) {
 
     // Case E: Boolean XOR (Symmetric Difference)
     bool_graph.clear();
-    vector::core::Node xor_a;
+    madi::core::Node xor_a;
     xor_a.name = "XOR A";
     xor_a.bounds = {0.0, 0.0, 100.0, 100.0};
     const auto xa_id = bool_graph.add_node(std::move(xor_a));
 
-    vector::core::Node xor_b;
+    madi::core::Node xor_b;
     xor_b.name = "XOR B";
     xor_b.bounds = {50.0, 50.0, 100.0, 100.0};
     const auto xb_id = bool_graph.add_node(std::move(xor_b));
 
     bool_canvas.select_node(xa_id, true);
     bool_canvas.select_node(xb_id, false);
-    bool ok_xor = bool_canvas.boolean_combine_selected(vector::core::BooleanOp::Xor);
+    bool ok_xor = bool_canvas.boolean_combine_selected(madi::core::BooleanOp::Xor);
     assert(ok_xor);
     (void)ok_xor;
     assert(bool_graph.node_count() == 1);
@@ -858,19 +858,19 @@ int main(int argc, char* argv[]) {
 
     // Case F: Disjoint shapes Intersection yields false without modifying diagram
     bool_graph.clear();
-    vector::core::Node dis_a;
+    madi::core::Node dis_a;
     dis_a.name = "Disjoint A";
     dis_a.bounds = {0.0, 0.0, 40.0, 40.0};
     const auto disa_id = bool_graph.add_node(std::move(dis_a));
 
-    vector::core::Node dis_b;
+    madi::core::Node dis_b;
     dis_b.name = "Disjoint B";
     dis_b.bounds = {200.0, 200.0, 40.0, 40.0};
     const auto disb_id = bool_graph.add_node(std::move(dis_b));
 
     bool_canvas.select_node(disa_id, true);
     bool_canvas.select_node(disb_id, false);
-    bool ok_dis_and = bool_canvas.boolean_combine_selected(vector::core::BooleanOp::Intersection);
+    bool ok_dis_and = bool_canvas.boolean_combine_selected(madi::core::BooleanOp::Intersection);
     assert(!ok_dis_and);
     (void)ok_dis_and;
     assert(bool_graph.node_count() == 2); // Unmodified!
@@ -879,17 +879,17 @@ int main(int argc, char* argv[]) {
   // 22. Test Console Boolean Commands in MainWindow
   std::cout << "===> Testing Console Boolean Commands (bool union, intersect, subtract, xor)..." << std::endl;
   {
-    vector::gui::MainWindow bool_win;
+    madi::gui::MainWindow bool_win;
     auto* bcanvas = bool_win.canvas();
     auto* bgraph = bcanvas->graph_model();
     bgraph->clear();
 
-    vector::core::Node n1;
+    madi::core::Node n1;
     n1.name = "A";
     n1.bounds = {100.0, 100.0, 80.0, 80.0};
     const auto nid1 = bgraph->add_node(std::move(n1));
 
-    vector::core::Node n2;
+    madi::core::Node n2;
     n2.name = "B";
     n2.bounds = {140.0, 140.0, 80.0, 80.0};
     const auto nid2 = bgraph->add_node(std::move(n2));
@@ -928,17 +928,17 @@ int main(int argc, char* argv[]) {
   // =========================================================================
   {
     std::cout << "===> Testing Colinear Geometry Simplification on Union Borders..." << std::endl;
-    vector::core::GraphModel cgraph;
-    vector::renderer::CanvasWidget ccanvas;
+    madi::core::GraphModel cgraph;
+    madi::renderer::CanvasWidget ccanvas;
     ccanvas.set_graph_model(&cgraph);
 
-    vector::core::Node rect1;
+    madi::core::Node rect1;
     rect1.name = "Rect 1";
     rect1.bounds = {0.0, 0.0, 100.0, 50.0};
     rect1.properties["stroke_width"] = "3.5";
     const auto r1_id = cgraph.add_node(std::move(rect1));
 
-    vector::core::Node rect2;
+    madi::core::Node rect2;
     rect2.name = "Rect 2";
     rect2.bounds = {100.0, 0.0, 100.0, 50.0};
     const auto r2_id = cgraph.add_node(std::move(rect2));
@@ -946,7 +946,7 @@ int main(int argc, char* argv[]) {
     ccanvas.select_node(r1_id, true);
     ccanvas.select_node(r2_id, false);
 
-    bool ok_union = ccanvas.boolean_combine_selected(vector::core::BooleanOp::Union);
+    bool ok_union = ccanvas.boolean_combine_selected(madi::core::BooleanOp::Union);
     assert(ok_union);
     (void)ok_union;
     assert(cgraph.node_count() == 1);
@@ -968,7 +968,7 @@ int main(int argc, char* argv[]) {
   // =========================================================================
   {
     std::cout << "===> Testing Modular Sub-Section Toolbars & View Toggling..." << std::endl;
-    vector::gui::MainWindow tb_win;
+    madi::gui::MainWindow tb_win;
     tb_win.show();
 
     auto* tb_file = tb_win.findChild<QToolBar*>("FileHistoryToolBar");
@@ -1014,7 +1014,7 @@ int main(int argc, char* argv[]) {
   // =========================================================================
   {
     std::cout << "===> Testing Menu Bar Structure & Submenu Grouping..." << std::endl;
-    vector::gui::MainWindow menu_win;
+    madi::gui::MainWindow menu_win;
     auto* mbar = menu_win.menuBar();
     assert(mbar != nullptr);
 
@@ -1085,14 +1085,14 @@ int main(int argc, char* argv[]) {
   // =========================================================================
   {
     std::cout << "===> Testing New Diagram from Inside Hierarchical Module..." << std::endl;
-    vector::gui::MainWindow hwin;
+    madi::gui::MainWindow hwin;
 
     // Start with clean state
     assert(!hwin.is_document_modified());
 
     // 1. Add a hierarchical subsystem block
     const auto sub_id = hwin.canvas()->add_subsystem({200.0, 200.0}, "ProcessorCore");
-    assert(sub_id != vector::core::InvalidNodeId);
+    assert(sub_id != madi::core::InvalidNodeId);
     assert(hwin.is_document_modified());
 
     // Drill down inside the subsystem
@@ -1104,8 +1104,8 @@ int main(int argc, char* argv[]) {
     assert(hwin.canvas()->graph_model() != hwin.graph_model());
 
     // Add elements inside the subsystem
-    const auto inner_id = hwin.canvas()->add_shape(vector::core::ShapeType::Rectangle, {80.0, 80.0}, "ALU");
-    assert(inner_id != vector::core::InvalidNodeId);
+    const auto inner_id = hwin.canvas()->add_shape(madi::core::ShapeType::Rectangle, {80.0, 80.0}, "ALU");
+    assert(inner_id != madi::core::InvalidNodeId);
     (void)inner_id;
     assert(hwin.is_document_modified());
 
@@ -1122,14 +1122,14 @@ int main(int argc, char* argv[]) {
     assert(!hwin.is_document_modified());
 
     // 4. Verify we can immediately add shapes to root diagram without issue
-    const auto new_root_node = hwin.canvas()->add_shape(vector::core::ShapeType::Rectangle, {150.0, 150.0}, "TopNode");
-    assert(new_root_node != vector::core::InvalidNodeId);
+    const auto new_root_node = hwin.canvas()->add_shape(madi::core::ShapeType::Rectangle, {150.0, 150.0}, "TopNode");
+    assert(new_root_node != madi::core::InvalidNodeId);
     (void)new_root_node;
     assert(hwin.graph_model()->node_count() == 1);
     assert(hwin.is_document_modified());
 
     // 5. Test saving and modified flag clearing
-    const QString temp_diag = "/tmp/test_vector_save_prompt.yaml";
+    const QString temp_diag = "/tmp/test_madi_save_prompt.yaml";
     bool ok_save = hwin.save_diagram_path(temp_diag);
     assert(ok_save);
     (void)ok_save;
@@ -1156,36 +1156,36 @@ int main(int argc, char* argv[]) {
   // 26. Test Centering Ports on Sheet Edges and Zoom-Fit on New Hierarchy
   {
     std::cout << "===> Testing Sheet Edge Port Centering & Zoom-Fit on New Hierarchy..." << std::endl;
-    vector::gui::MainWindow hwin;
+    madi::gui::MainWindow hwin;
     auto* canvas = hwin.canvas();
     auto* graph = hwin.graph_model();
 
     // Create a subsystem block with 2 inputs and 2 outputs in parent graph
     const auto block_id = canvas->add_subsystem({200.0, 200.0}, "ComputeEngine");
-    assert(block_id != vector::core::InvalidNodeId);
+    assert(block_id != madi::core::InvalidNodeId);
     auto* block_node = graph->find_node(block_id);
     assert(block_node != nullptr);
     (void)block_node;
 
     // Add 2 inputs on West and 2 outputs on East
-    vector::core::Port in1;
+    madi::core::Port in1;
     in1.parent_node = block_id; in1.name = "clk"; in1.local_anchor = {0.0, 0.3};
-    in1.direction = vector::core::PortDirection::West; in1.pin_type = "input"; in1.is_boundary_interface = true;
+    in1.direction = madi::core::PortDirection::West; in1.pin_type = "input"; in1.is_boundary_interface = true;
     graph->add_port(std::move(in1));
 
-    vector::core::Port in2;
+    madi::core::Port in2;
     in2.parent_node = block_id; in2.name = "rst_n"; in2.local_anchor = {0.0, 0.7};
-    in2.direction = vector::core::PortDirection::West; in2.pin_type = "input"; in2.is_boundary_interface = true;
+    in2.direction = madi::core::PortDirection::West; in2.pin_type = "input"; in2.is_boundary_interface = true;
     graph->add_port(std::move(in2));
 
-    vector::core::Port out1;
+    madi::core::Port out1;
     out1.parent_node = block_id; out1.name = "data_out"; out1.local_anchor = {1.0, 0.3};
-    out1.direction = vector::core::PortDirection::East; out1.pin_type = "output"; out1.is_boundary_interface = true;
+    out1.direction = madi::core::PortDirection::East; out1.pin_type = "output"; out1.is_boundary_interface = true;
     graph->add_port(std::move(out1));
 
-    vector::core::Port out2;
+    madi::core::Port out2;
     out2.parent_node = block_id; out2.name = "valid"; out2.local_anchor = {1.0, 0.7};
-    out2.direction = vector::core::PortDirection::East; out2.pin_type = "output"; out2.is_boundary_interface = true;
+    out2.direction = madi::core::PortDirection::East; out2.pin_type = "output"; out2.is_boundary_interface = true;
     graph->add_port(std::move(out2));
 
     // Drill down into the newly created hierarchy
@@ -1206,12 +1206,12 @@ int main(int argc, char* argv[]) {
     size_t in_count = 0;
     size_t out_count = 0;
     for (const auto& [nid, n] : child_g->nodes()) {
-      if (n.shape == vector::core::ShapeType::InputPort) {
+      if (n.shape == madi::core::ShapeType::InputPort) {
         in_count++;
         assert(std::abs(n.bounds.x - expected_in_x) < 1e-3);
         // Verify vertically centered within sheet
         assert(n.bounds.y >= page.y && n.bounds.bottom() <= page.bottom());
-      } else if (n.shape == vector::core::ShapeType::OutputPort) {
+      } else if (n.shape == madi::core::ShapeType::OutputPort) {
         out_count++;
         assert(std::abs(n.bounds.x - expected_out_x) < 1e-3);
         assert(n.bounds.y >= page.y && n.bounds.bottom() <= page.bottom());
@@ -1233,32 +1233,32 @@ int main(int argc, char* argv[]) {
   // 27. Test Definition Synchronization vs Instance Drift Mode (Inclusive Language)
   {
     std::cout << "===> Testing Definition Synchronization & Instance Drift Architecture..." << std::endl;
-    vector::core::GraphModel top_graph;
-    vector::core::GraphModel child_graph;
+    madi::core::GraphModel top_graph;
+    madi::core::GraphModel child_graph;
 
     // Create child diagram with internal ports
-    vector::core::Node in_marker;
+    madi::core::Node in_marker;
     in_marker.name = "clk_in";
-    in_marker.shape = vector::core::ShapeType::InputPort;
+    in_marker.shape = madi::core::ShapeType::InputPort;
     in_marker.bounds = {20.0, 100.0, 84.0, 28.0};
     auto in_id = child_graph.add_node(std::move(in_marker));
-    vector::core::Port child_in;
+    madi::core::Port child_in;
     child_in.parent_node = in_id; child_in.name = "clk_in"; child_in.local_anchor = {1.0, 0.5};
-    child_in.direction = vector::core::PortDirection::East; child_in.pin_type = "input"; child_in.is_boundary_interface = true;
+    child_in.direction = madi::core::PortDirection::East; child_in.pin_type = "input"; child_in.is_boundary_interface = true;
     child_graph.add_port(std::move(child_in));
 
-    vector::core::Node out_marker;
+    madi::core::Node out_marker;
     out_marker.name = "data_out";
-    out_marker.shape = vector::core::ShapeType::OutputPort;
+    out_marker.shape = madi::core::ShapeType::OutputPort;
     out_marker.bounds = {400.0, 100.0, 84.0, 28.0};
     auto out_id = child_graph.add_node(std::move(out_marker));
-    vector::core::Port child_out;
+    madi::core::Port child_out;
     child_out.parent_node = out_id; child_out.name = "data_out"; child_out.local_anchor = {0.0, 0.5};
-    child_out.direction = vector::core::PortDirection::West; child_out.pin_type = "output"; child_out.is_boundary_interface = true;
+    child_out.direction = madi::core::PortDirection::West; child_out.pin_type = "output"; child_out.is_boundary_interface = true;
     child_graph.add_port(std::move(child_out));
 
     // Instance 1: Follow Primary Definition
-    vector::core::Node inst1;
+    madi::core::Node inst1;
     inst1.name = "Instance_Synchronized";
     inst1.bounds = {100.0, 100.0, 250.0, 150.0};
     inst1.properties["definition_sync_mode"] = "follow_primary";
@@ -1266,13 +1266,13 @@ int main(int argc, char* argv[]) {
     auto* node1 = top_graph.find_node(inst1_id);
 
     // Sync instance 1: resets dimensions to default symbol fit
-    vector::core::SymbolGenerator::sync_symbol_from_diagram(*node1, top_graph, child_graph);
+    madi::core::SymbolGenerator::sync_symbol_from_diagram(*node1, top_graph, child_graph);
     assert(node1->port_ids.size() == 2);
     assert(node1->bounds.width == 160.0); // Reset to primary definition default
     assert(node1->bounds.height == 100.0);
 
     // Instance 2: Allow Drift (Independent Instance Override)
-    vector::core::Node inst2;
+    madi::core::Node inst2;
     inst2.name = "Instance_Drifting";
     inst2.bounds = {400.0, 100.0, 320.0, 220.0}; // Custom dimensions
     inst2.properties["definition_sync_mode"] = "allow_drift";
@@ -1280,13 +1280,13 @@ int main(int argc, char* argv[]) {
     auto* node2 = top_graph.find_node(inst2_id);
 
     // Manually add custom port pin placement
-    vector::core::Port custom_p;
+    madi::core::Port custom_p;
     custom_p.parent_node = inst2_id; custom_p.name = "clk_in"; custom_p.local_anchor = {0.0, 0.25};
-    custom_p.direction = vector::core::PortDirection::West; custom_p.pin_type = "input"; custom_p.is_boundary_interface = true;
+    custom_p.direction = madi::core::PortDirection::West; custom_p.pin_type = "input"; custom_p.is_boundary_interface = true;
     top_graph.add_port(std::move(custom_p));
 
     // Sync instance 2: MUST preserve custom dimensions and existing pin placements!
-    vector::core::SymbolGenerator::sync_symbol_from_diagram(*node2, top_graph, child_graph);
+    madi::core::SymbolGenerator::sync_symbol_from_diagram(*node2, top_graph, child_graph);
     assert(node2->bounds.width == 320.0);   // Preserved!
     assert(node2->bounds.height == 220.0);  // Preserved!
     assert(node2->port_ids.size() == 2);    // New port appended without clobbering custom pin
@@ -1300,21 +1300,21 @@ int main(int argc, char* argv[]) {
   // 28. Test Symbol Editor Dialog and Console Commands
   {
     std::cout << "===> Testing Symbol Editor Dialog and Console Symbol/Drift Commands..." << std::endl;
-    vector::gui::MainWindow hwin;
+    madi::gui::MainWindow hwin;
     auto* canvas = hwin.canvas();
     auto* graph = hwin.graph_model();
 
     const auto sub_id = canvas->add_subsystem({250.0, 250.0}, "DSP_Block");
-    assert(sub_id != vector::core::InvalidNodeId);
+    assert(sub_id != madi::core::InvalidNodeId);
     auto* sub_node = graph->find_node(sub_id);
     assert(sub_node != nullptr);
 
     // Test Dialog creation and setup
-    vector::gui::SymbolEditorDialog dlg(*sub_node, *graph, nullptr, &hwin);
+    madi::gui::SymbolEditorDialog dlg(*sub_node, *graph, nullptr, &hwin);
     assert(!dlg.is_drift_allowed());
 
     // Test Console drift on/off commands
-    auto* console = hwin.findChild<vector::gui::CommandConsoleDock*>("CommandConsoleDock");
+    auto* console = hwin.findChild<madi::gui::CommandConsoleDock*>("CommandConsoleDock");
     assert(console != nullptr);
 
     // Select the subsystem
@@ -1345,21 +1345,21 @@ int main(int argc, char* argv[]) {
   // 29. Test Direct Vector Rendering Pipeline for All Shapes & Wires
   {
     std::cout << "===> Testing Smooth Antialiased Vector Drawing Pipeline (Nodes, Wires, Badges)..." << std::endl;
-    vector::gui::MainWindow hwin;
+    madi::gui::MainWindow hwin;
     auto* canvas = hwin.canvas();
 
     // Add variety of figures
-    const auto r_id = canvas->add_shape(vector::core::ShapeType::Rectangle, {100.0, 100.0}, "Rect1");
-    const auto rr_id = canvas->add_shape(vector::core::ShapeType::RoundedRect, {250.0, 100.0}, "RoundRect1");
-    const auto el_id = canvas->add_shape(vector::core::ShapeType::Ellipse, {400.0, 100.0}, "Ellipse1");
+    const auto r_id = canvas->add_shape(madi::core::ShapeType::Rectangle, {100.0, 100.0}, "Rect1");
+    const auto rr_id = canvas->add_shape(madi::core::ShapeType::RoundedRect, {250.0, 100.0}, "RoundRect1");
+    const auto el_id = canvas->add_shape(madi::core::ShapeType::Ellipse, {400.0, 100.0}, "Ellipse1");
     const auto sub_id = canvas->add_subsystem({250.0, 250.0}, "Subsystem1");
     const auto wire_id = canvas->add_wire_by_points({100.0, 100.0}, {250.0, 250.0}, "Wire1");
 
-    assert(r_id != vector::core::InvalidNodeId);
-    assert(rr_id != vector::core::InvalidNodeId);
-    assert(el_id != vector::core::InvalidNodeId);
-    assert(sub_id != vector::core::InvalidNodeId);
-    assert(wire_id != vector::core::InvalidEdgeId);
+    assert(r_id != madi::core::InvalidNodeId);
+    assert(rr_id != madi::core::InvalidNodeId);
+    assert(el_id != madi::core::InvalidNodeId);
+    assert(sub_id != madi::core::InvalidNodeId);
+    assert(wire_id != madi::core::InvalidEdgeId);
     (void)r_id; (void)rr_id; (void)el_id; (void)sub_id; (void)wire_id;
 
     // Execute frame rendering to ensure zero crashes and clean drawing pass
@@ -1382,24 +1382,24 @@ int main(int argc, char* argv[]) {
   // 30. Test Interactive Shape Placement Preview, Ghost Tracking & Snapping
   {
     std::cout << "===> Testing Interactive Shape Placement Preview, Ghost Tracking & Snapping..." << std::endl;
-    vector::gui::MainWindow hwin;
+    madi::gui::MainWindow hwin;
     hwin.resize(1024, 768);
     auto* canvas = hwin.canvas();
     assert(canvas != nullptr);
     canvas->graph_model()->clear();
 
     // Initial state: Select mode, no placement active
-    assert(canvas->tool_mode() == vector::renderer::ToolMode::Select);
+    assert(canvas->tool_mode() == madi::renderer::ToolMode::Select);
     assert(!canvas->is_placement_tool_active());
 
     // Add an initial anchor node at world (100, 100)
-    const auto anchor_id = canvas->add_shape(vector::core::ShapeType::Rectangle, {100.0, 100.0}, "AnchorNode");
-    assert(anchor_id != vector::core::InvalidNodeId);
+    const auto anchor_id = canvas->add_shape(madi::core::ShapeType::Rectangle, {100.0, 100.0}, "AnchorNode");
+    assert(anchor_id != madi::core::InvalidNodeId);
 
     // Enter AddRectangle tool mode
-    canvas->set_tool_mode(vector::renderer::ToolMode::AddRectangle);
+    canvas->set_tool_mode(madi::renderer::ToolMode::AddRectangle);
     assert(canvas->is_placement_tool_active());
-    assert(canvas->tool_mode() == vector::renderer::ToolMode::AddRectangle);
+    assert(canvas->tool_mode() == madi::renderer::ToolMode::AddRectangle);
 
     // Move mouse near the anchor node's top edge (e.g. world 102.0, 100.0)
     (void)anchor_id;
@@ -1426,45 +1426,45 @@ int main(int argc, char* argv[]) {
     QApplication::sendEvent(canvas, &press_evt);
 
     // Verify shape was added and mode returned to Select
-    assert(canvas->tool_mode() == vector::renderer::ToolMode::Select);
+    assert(canvas->tool_mode() == madi::renderer::ToolMode::Select);
     assert(!canvas->is_placement_tool_active());
     assert(canvas->graph_model()->node_count() == 2);
 
     // Test Escape cancellation
-    canvas->set_tool_mode(vector::renderer::ToolMode::AddEllipse);
+    canvas->set_tool_mode(madi::renderer::ToolMode::AddEllipse);
     assert(canvas->is_placement_tool_active());
     QKeyEvent esc_evt(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QApplication::sendEvent(canvas, &esc_evt);
-    assert(canvas->tool_mode() == vector::renderer::ToolMode::Select);
+    assert(canvas->tool_mode() == madi::renderer::ToolMode::Select);
     assert(!canvas->is_placement_tool_active());
 
     // Test Right-Click cancellation on polygon tool
-    canvas->set_tool_mode(vector::renderer::ToolMode::AddPolygon);
+    canvas->set_tool_mode(madi::renderer::ToolMode::AddPolygon);
     assert(canvas->is_polygon_drawing_active());
     assert(!canvas->is_placement_tool_active());
     QMouseEvent rclick_evt(QEvent::MouseButtonPress, q_sp, q_sp, Qt::RightButton, Qt::RightButton, Qt::NoModifier);
     QApplication::sendEvent(canvas, &rclick_evt);
-    assert(canvas->tool_mode() == vector::renderer::ToolMode::Select);
+    assert(canvas->tool_mode() == madi::renderer::ToolMode::Select);
     assert(!canvas->is_polygon_drawing_active());
 
     // Test All Tool Preview Rendering Passes (RoundedRect, HierarchicalBlock, InputPort, OutputPort)
-    canvas->set_tool_mode(vector::renderer::ToolMode::AddRoundedRect);
+    canvas->set_tool_mode(madi::renderer::ToolMode::AddRoundedRect);
     canvas->render_frame_for_test();
-    canvas->set_tool_mode(vector::renderer::ToolMode::AddHierarchicalBlock);
+    canvas->set_tool_mode(madi::renderer::ToolMode::AddHierarchicalBlock);
     canvas->render_frame_for_test();
-    canvas->set_tool_mode(vector::renderer::ToolMode::AddInputPort);
+    canvas->set_tool_mode(madi::renderer::ToolMode::AddInputPort);
     canvas->render_frame_for_test();
-    canvas->set_tool_mode(vector::renderer::ToolMode::AddOutputPort);
+    canvas->set_tool_mode(madi::renderer::ToolMode::AddOutputPort);
     canvas->render_frame_for_test();
     canvas->cancel_placement();
-    assert(canvas->tool_mode() == vector::renderer::ToolMode::Select);
+    assert(canvas->tool_mode() == madi::renderer::ToolMode::Select);
     canvas->render_frame_for_test();
   }
 
   // 31. Test Interactive Point-and-Click Polygon Creation Tool & Closed Borders
   {
     std::cout << "===> Testing Point-and-Click Polygon Creation & Complete Closed Borders..." << std::endl;
-    vector::gui::MainWindow hwin;
+    madi::gui::MainWindow hwin;
     hwin.resize(1024, 768);
     auto* canvas = hwin.canvas();
     assert(canvas != nullptr);
@@ -1473,7 +1473,7 @@ int main(int argc, char* argv[]) {
     const size_t initial_count = canvas->graph_model()->node_count();
 
     // 1. Activate Point-and-Click Polygon Drawing
-    canvas->set_tool_mode(vector::renderer::ToolMode::AddPolygon);
+    canvas->set_tool_mode(madi::renderer::ToolMode::AddPolygon);
     assert(canvas->is_polygon_drawing_active());
     assert(canvas->in_progress_polygon_points().empty());
 
@@ -1521,7 +1521,7 @@ int main(int argc, char* argv[]) {
     QApplication::sendEvent(canvas, &r_finish);
 
     // Verify finished state
-    assert(canvas->tool_mode() == vector::renderer::ToolMode::Select);
+    assert(canvas->tool_mode() == madi::renderer::ToolMode::Select);
     assert(!canvas->is_polygon_drawing_active());
     assert(canvas->in_progress_polygon_points().empty());
     assert(canvas->graph_model()->node_count() == initial_count + 1);
@@ -1530,7 +1530,7 @@ int main(int argc, char* argv[]) {
     const auto nid = canvas->graph_model()->node_count();
     const auto* poly_node = canvas->graph_model()->find_node(nid);
     assert(poly_node != nullptr);
-    assert(poly_node->shape == vector::core::ShapeType::CustomPolygon);
+    assert(poly_node->shape == madi::core::ShapeType::CustomPolygon);
     assert(poly_node->polygon_vertices.size() == 4);
     assert(std::abs(poly_node->bounds.width - 100.0) < 1e-3);
     assert(std::abs(poly_node->bounds.height - 100.0) < 1e-3);
@@ -1539,7 +1539,7 @@ int main(int argc, char* argv[]) {
 
     // Verify regular hexagon has complete closed borders
     const auto hex_id = canvas->add_polygon({300.0, 300.0}, 6, "RegularHexagon");
-    assert(hex_id != vector::core::InvalidNodeId);
+    assert(hex_id != madi::core::InvalidNodeId);
     (void)hex_id;
     canvas->render_frame_for_test();
   }
@@ -1547,9 +1547,9 @@ int main(int argc, char* argv[]) {
   // 32. Test Z-Order Stacking Operations (Bring to Front, Send to Back, Bring Forward, Send Backward, Hit-Testing, Undo/Redo)
   {
     std::cout << "===> Testing Stacking Order Operations (Bring to Front, Send to Back, etc.)..." << std::endl;
-    vector::gui::MainWindow hwin;
+    madi::gui::MainWindow hwin;
     hwin.resize(1024, 768);
-    auto* canvas = hwin.findChild<vector::renderer::CanvasWidget*>();
+    auto* canvas = hwin.findChild<madi::renderer::CanvasWidget*>();
     assert(canvas != nullptr);
     auto* history = canvas->command_history();
     (void)history;
@@ -1561,13 +1561,13 @@ int main(int argc, char* argv[]) {
 
     // Create 3 overlapping shapes: A (bottom), B (middle), C (top)
     // All overlapping at point (200, 200)
-    const auto id_a = canvas->add_shape(vector::core::ShapeType::Rectangle, {200.0, 200.0}, "ShapeA", false);
-    const auto id_b = canvas->add_shape(vector::core::ShapeType::Rectangle, {200.0, 200.0}, "ShapeB", false);
-    const auto id_c = canvas->add_shape(vector::core::ShapeType::Rectangle, {200.0, 200.0}, "ShapeC", false);
+    const auto id_a = canvas->add_shape(madi::core::ShapeType::Rectangle, {200.0, 200.0}, "ShapeA", false);
+    const auto id_b = canvas->add_shape(madi::core::ShapeType::Rectangle, {200.0, 200.0}, "ShapeB", false);
+    const auto id_c = canvas->add_shape(madi::core::ShapeType::Rectangle, {200.0, 200.0}, "ShapeC", false);
 
-    assert(id_a != vector::core::InvalidNodeId);
-    assert(id_b != vector::core::InvalidNodeId);
-    assert(id_c != vector::core::InvalidNodeId);
+    assert(id_a != madi::core::InvalidNodeId);
+    assert(id_b != madi::core::InvalidNodeId);
+    assert(id_c != madi::core::InvalidNodeId);
 
     auto* n_a = canvas->graph_model()->find_node(id_a);
     auto* n_b = canvas->graph_model()->find_node(id_b);
@@ -1644,7 +1644,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Test Console Commands for Z-order:
-    auto* console = hwin.findChild<vector::gui::CommandConsoleDock*>();
+    auto* console = hwin.findChild<madi::gui::CommandConsoleDock*>();
     assert(console != nullptr);
     auto* input_line = console->findChild<QLineEdit*>();
     assert(input_line != nullptr);
@@ -1694,7 +1694,7 @@ int main(int argc, char* argv[]) {
   // 33. Test Status Line Hierarchy Path, Typography Styling, XML Default & SVG/Raster Image Export
   {
     std::cout << "===> Testing Status Bar Hierarchy Path, Quick Styling, XML Default & SVG/Raster Exporters..." << std::endl;
-    vector::gui::MainWindow hwin;
+    madi::gui::MainWindow hwin;
     auto* canvas = hwin.canvas();
     auto* graph = hwin.graph_model();
     auto* status_lbl = hwin.status_hierarchy_label();
@@ -1711,7 +1711,7 @@ int main(int argc, char* argv[]) {
 
     // 1. Hierarchy drilldown and status bar reflection
     const auto sub_id = canvas->add_subsystem({200.0, 200.0}, "FilterBlock");
-    assert(sub_id != vector::core::InvalidNodeId);
+    assert(sub_id != madi::core::InvalidNodeId);
     (void)sub_id;
     assert(canvas->drill_down_node(sub_id));
     assert(canvas->is_inside_subsystem());
@@ -1727,8 +1727,8 @@ int main(int argc, char* argv[]) {
     assert(!btn_up->isEnabled());
 
     // 2. Quick Styling & Typography on Canvas Nodes
-    const auto rect_id = canvas->add_shape(vector::core::ShapeType::Rectangle, {300.0, 200.0}, "StyledNode");
-    assert(rect_id != vector::core::InvalidNodeId);
+    const auto rect_id = canvas->add_shape(madi::core::ShapeType::Rectangle, {300.0, 200.0}, "StyledNode");
+    assert(rect_id != madi::core::InvalidNodeId);
     canvas->select_node(rect_id, false);
 
     // Apply font family, font size, bold, italic, underline
@@ -1786,7 +1786,7 @@ int main(int argc, char* argv[]) {
     std::remove(xml_path.toStdString().c_str());
 
     // 4. Scalable Vector Graphics (SVG) and Raster Image (PNG / JPEG) Export
-    const QString svg_path = "/tmp/test_export_vector.svg";
+    const QString svg_path = "/tmp/test_export_madi.svg";
     const QString png_path = "/tmp/test_export_raster.png";
     const QString jpg_path = "/tmp/test_export_raster.jpg";
     std::remove(svg_path.toStdString().c_str());
@@ -1816,7 +1816,7 @@ int main(int argc, char* argv[]) {
     std::remove(jpg_path.toStdString().c_str());
 
     // 5. Console Commands for Typography, Color & Export
-    auto* console = hwin.findChild<vector::gui::CommandConsoleDock*>();
+    auto* console = hwin.findChild<madi::gui::CommandConsoleDock*>();
     assert(console != nullptr);
     auto* input_line = console->findChild<QLineEdit*>();
     assert(input_line != nullptr);
@@ -1863,7 +1863,7 @@ int main(int argc, char* argv[]) {
   // 34. Test Nested Hierarchical Submodules Drill-down Loop Prevention & Multi-level Scope Traversal
   {
     std::cout << "===> Testing Nested Submodules Drill-Down, Status Bar Path Truncation & Loop Prevention..." << std::endl;
-    vector::gui::MainWindow hwin;
+    madi::gui::MainWindow hwin;
     auto* canvas = hwin.canvas();
     auto* root_graph = hwin.graph_model();
     auto* status_lbl = hwin.status_hierarchy_label();
@@ -1875,8 +1875,8 @@ int main(int argc, char* argv[]) {
     assert(status_lbl->text().contains("Top"));
 
     // Step 1: Add a Subsystem in root diagram
-    const vector::core::NodeId sub1_id = canvas->add_subsystem(vector::core::Vec2d{100.0, 100.0}, "SubsystemAlpha", false);
-    assert(sub1_id != vector::core::InvalidNodeId);
+    const madi::core::NodeId sub1_id = canvas->add_subsystem(madi::core::Vec2d{100.0, 100.0}, "SubsystemAlpha", false);
+    assert(sub1_id != madi::core::InvalidNodeId);
     auto* sub1_node = root_graph->find_node(sub1_id);
     assert(sub1_node != nullptr);
     const std::string sub1_uuid = sub1_node->properties["subsystem_uuid"];
@@ -1892,8 +1892,8 @@ int main(int argc, char* argv[]) {
     assert(status_lbl->text().contains("SubsystemAlpha"));
 
     // Step 3: Add a nested Submodule inside SubsystemAlpha
-    const vector::core::NodeId sub2_id = canvas->add_subsystem(vector::core::Vec2d{200.0, 200.0}, "SubmoduleBeta", false);
-    assert(sub2_id != vector::core::InvalidNodeId);
+    const madi::core::NodeId sub2_id = canvas->add_subsystem(madi::core::Vec2d{200.0, 200.0}, "SubmoduleBeta", false);
+    assert(sub2_id != madi::core::InvalidNodeId);
     auto* sub2_node = sub1_graph->find_node(sub2_id);
     assert(sub2_node != nullptr);
     const std::string sub2_uuid = sub2_node->properties["subsystem_uuid"];
@@ -1911,21 +1911,21 @@ int main(int argc, char* argv[]) {
     assert(status_lbl->text().contains("SubmoduleBeta"));
 
     // Step 5: Inside SubmoduleBeta, add a leaf node
-    const vector::core::NodeId leaf_id = canvas->add_shape(vector::core::ShapeType::Rectangle, vector::core::Vec2d{300.0, 300.0}, "LeafNode", false);
-    assert(leaf_id != vector::core::InvalidNodeId);
+    const madi::core::NodeId leaf_id = canvas->add_shape(madi::core::ShapeType::Rectangle, madi::core::Vec2d{300.0, 300.0}, "LeafNode", false);
+    assert(leaf_id != madi::core::InvalidNodeId);
     assert(sub2_graph->find_node(leaf_id) != nullptr);
 
     // Step 6: Test status bar breadcrumb truncation when hierarchy becomes too large
     // A path with > 3 segments or exceeding max characters must start with "..." and show the last few elements
     QString deep_path = "Top / SystemMain / ProcessingUnit / ArithmeticLogic / RegisterBank";
-    QString truncated = vector::gui::MainWindow::format_status_hierarchy_path(deep_path, 38, 3);
+    QString truncated = madi::gui::MainWindow::format_status_hierarchy_path(deep_path, 38, 3);
     assert(truncated.startsWith("..."));
     assert(truncated.contains("ArithmeticLogic"));
     assert(truncated.contains("RegisterBank"));
     assert(!truncated.contains("Top")); // Top must be elided
 
     QString long_name_path = "Top / VeryLongSubsystemNameWithLotsOfLetters / AnotherExcessivelyLongSubmoduleName";
-    QString truncated_long = vector::gui::MainWindow::format_status_hierarchy_path(long_name_path, 38, 3);
+    QString truncated_long = madi::gui::MainWindow::format_status_hierarchy_path(long_name_path, 38, 3);
     assert(truncated_long.startsWith("..."));
     assert(truncated_long.length() <= 38);
 
@@ -1978,32 +1978,32 @@ int main(int argc, char* argv[]) {
     assert(root_graph != nullptr);
 
     // 1. Wire Crossing Styles
-    assert(canvas.wire_crossing_style() == vector::renderer::WireCrossingStyle::DotPriority);
-    canvas.set_wire_crossing_style(vector::renderer::WireCrossingStyle::BridgeLoopPriority);
-    assert(canvas.wire_crossing_style() == vector::renderer::WireCrossingStyle::BridgeLoopPriority);
-    canvas.set_wire_crossing_style(vector::renderer::WireCrossingStyle::DotPriority);
-    assert(canvas.wire_crossing_style() == vector::renderer::WireCrossingStyle::DotPriority);
+    assert(canvas.wire_crossing_style() == madi::renderer::WireCrossingStyle::DotPriority);
+    canvas.set_wire_crossing_style(madi::renderer::WireCrossingStyle::BridgeLoopPriority);
+    assert(canvas.wire_crossing_style() == madi::renderer::WireCrossingStyle::BridgeLoopPriority);
+    canvas.set_wire_crossing_style(madi::renderer::WireCrossingStyle::DotPriority);
+    assert(canvas.wire_crossing_style() == madi::renderer::WireCrossingStyle::DotPriority);
 
     // 2. Auto-routing arrow with obstacle avoidance & connect points
-    vector::core::Node src_box;
+    madi::core::Node src_box;
     src_box.name = "RouteSource";
     src_box.bounds = {50.0, 100.0, 100.0, 60.0};
     auto src_id = root_graph->add_node(std::move(src_box));
 
-    vector::core::Node dst_box1;
+    madi::core::Node dst_box1;
     dst_box1.name = "RouteDest1";
     dst_box1.bounds = {400.0, 100.0, 100.0, 60.0};
     auto dst1_id = root_graph->add_node(std::move(dst_box1));
 
     // Obstacle between them
-    vector::core::Node obs_box;
+    madi::core::Node obs_box;
     obs_box.name = "ObstacleBlock";
     obs_box.bounds = {200.0, 80.0, 100.0, 100.0};
     auto obs_id = root_graph->add_node(std::move(obs_box));
 
     // Generate arrow
-    auto arrow_id = canvas.auto_route_arrow(src_id, vector::core::InvalidPortId, dst1_id, vector::core::InvalidPortId);
-    assert(arrow_id != vector::core::InvalidEdgeId);
+    auto arrow_id = canvas.auto_route_arrow(src_id, madi::core::InvalidPortId, dst1_id, madi::core::InvalidPortId);
+    assert(arrow_id != madi::core::InvalidEdgeId);
 
     auto* edge = root_graph->find_edge(arrow_id);
     assert(edge != nullptr);
@@ -2012,18 +2012,18 @@ int main(int argc, char* argv[]) {
     assert(!edge->is_multipoint());
 
     // 3. Multipoint Arrow: Add destination branches to multiple targets
-    vector::core::Node dst_box2;
+    madi::core::Node dst_box2;
     dst_box2.name = "RouteDest2";
     dst_box2.bounds = {400.0, 250.0, 100.0, 60.0};
     auto dst2_id = root_graph->add_node(std::move(dst_box2));
 
-    vector::core::Node dst_box3;
+    madi::core::Node dst_box3;
     dst_box3.name = "RouteDest3";
     dst_box3.bounds = {400.0, 400.0, 100.0, 60.0};
     auto dst3_id = root_graph->add_node(std::move(dst_box3));
 
     // Add branch to Dest2
-    bool b1 = canvas.add_arrow_branch(arrow_id, dst2_id, vector::core::InvalidPortId);
+    bool b1 = canvas.add_arrow_branch(arrow_id, dst2_id, madi::core::InvalidPortId);
     assert(b1);
     assert(edge->is_multipoint());
     assert(edge->extra_destinations.size() == 1);
@@ -2032,7 +2032,7 @@ int main(int argc, char* argv[]) {
 
     // Add branch to Dest3 via selected arrow
     canvas.select_edge(arrow_id);
-    bool b2 = canvas.add_arrow_branch_to_selected(dst3_id, vector::core::InvalidPortId);
+    bool b2 = canvas.add_arrow_branch_to_selected(dst3_id, madi::core::InvalidPortId);
     assert(b2);
     assert(edge->extra_destinations.size() == 2);
     assert(edge->extra_destinations[1].waypoints.size() >= 2);
@@ -2059,35 +2059,35 @@ int main(int argc, char* argv[]) {
     assert(canvas.is_edge_branches_aligned(arrow_id));
 
     // 5. Test ESC Key Returns Tool to Select Mode
-    canvas.set_tool_mode(vector::renderer::ToolMode::AddRectangle);
-    assert(canvas.tool_mode() == vector::renderer::ToolMode::AddRectangle);
+    canvas.set_tool_mode(madi::renderer::ToolMode::AddRectangle);
+    assert(canvas.tool_mode() == madi::renderer::ToolMode::AddRectangle);
     QKeyEvent esc_rect(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QApplication::sendEvent(&canvas, &esc_rect);
-    assert(canvas.tool_mode() == vector::renderer::ToolMode::Select);
+    assert(canvas.tool_mode() == madi::renderer::ToolMode::Select);
 
-    canvas.set_tool_mode(vector::renderer::ToolMode::AddConnector);
-    assert(canvas.tool_mode() == vector::renderer::ToolMode::AddConnector);
+    canvas.set_tool_mode(madi::renderer::ToolMode::AddConnector);
+    assert(canvas.tool_mode() == madi::renderer::ToolMode::AddConnector);
     QKeyEvent esc_conn(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QApplication::sendEvent(&canvas, &esc_conn);
-    assert(canvas.tool_mode() == vector::renderer::ToolMode::Select);
+    assert(canvas.tool_mode() == madi::renderer::ToolMode::Select);
 
-    canvas.set_tool_mode(vector::renderer::ToolMode::AddPolygon);
-    assert(canvas.tool_mode() == vector::renderer::ToolMode::AddPolygon);
+    canvas.set_tool_mode(madi::renderer::ToolMode::AddPolygon);
+    assert(canvas.tool_mode() == madi::renderer::ToolMode::AddPolygon);
     QKeyEvent esc_poly(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QApplication::sendEvent(&canvas, &esc_poly);
-    assert(canvas.tool_mode() == vector::renderer::ToolMode::Select);
+    assert(canvas.tool_mode() == madi::renderer::ToolMode::Select);
 
-    canvas.set_tool_mode(vector::renderer::ToolMode::AddHierarchicalBlock);
-    assert(canvas.tool_mode() == vector::renderer::ToolMode::AddHierarchicalBlock);
+    canvas.set_tool_mode(madi::renderer::ToolMode::AddHierarchicalBlock);
+    assert(canvas.tool_mode() == madi::renderer::ToolMode::AddHierarchicalBlock);
     QKeyEvent esc_block(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QApplication::sendEvent(&canvas, &esc_block);
-    assert(canvas.tool_mode() == vector::renderer::ToolMode::Select);
+    assert(canvas.tool_mode() == madi::renderer::ToolMode::Select);
 
     // 6. Render canvas with both wire crossing styles (Style 1 and Style 2)
-    canvas.set_wire_crossing_style(vector::renderer::WireCrossingStyle::DotPriority);
+    canvas.set_wire_crossing_style(madi::renderer::WireCrossingStyle::DotPriority);
     canvas.render_frame_for_test();
 
-    canvas.set_wire_crossing_style(vector::renderer::WireCrossingStyle::BridgeLoopPriority);
+    canvas.set_wire_crossing_style(madi::renderer::WireCrossingStyle::BridgeLoopPriority);
     canvas.render_frame_for_test();
 
     (void)obs_id;
@@ -2097,7 +2097,7 @@ int main(int argc, char* argv[]) {
   //     and Tools Dock (Pure tools palette, compact selector footprint)
   {
     std::cout << "[Test 34] Verifying Shapes Dock and Tools Dock conversion..." << std::endl;
-    vector::gui::MainWindow win;
+    madi::gui::MainWindow win;
     win.show();
 
     // A: Test Shapes Dock
@@ -2138,11 +2138,11 @@ int main(int argc, char* argv[]) {
     assert(shapes_dock->tree_widget()->iconSize().height() >= 24);
 
     // B: Test Adding custom shape
-    shapes_dock->add_shape_item("Motor Controller", vector::gui::StencilLibraryDock::StencilItemType::ShapeRect, 0);
+    shapes_dock->add_shape_item("Motor Controller", madi::gui::StencilLibraryDock::StencilItemType::ShapeRect, 0);
     assert(shapes_dock->total_shape_count() == initial_shapes + 1);
     assert(shapes_dock->has_shape("Motor Controller"));
 
-    shapes_dock->add_shape_item("CustomDodecagon", vector::gui::StencilLibraryDock::StencilItemType::ShapePolygon, 12);
+    shapes_dock->add_shape_item("CustomDodecagon", madi::gui::StencilLibraryDock::StencilItemType::ShapePolygon, 12);
     assert(shapes_dock->total_shape_count() == initial_shapes + 2);
     assert(shapes_dock->has_shape("CustomDodecagon"));
 
@@ -2150,7 +2150,7 @@ int main(int argc, char* argv[]) {
     auto* canvas = win.canvas();
     assert(canvas != nullptr);
     const auto center = canvas->visible_world_frustum().center();
-    auto test_node_id = canvas->add_shape(vector::core::ShapeType::Rectangle, center, "Sensor Node");
+    auto test_node_id = canvas->add_shape(madi::core::ShapeType::Rectangle, center, "Sensor Node");
     canvas->select_node(test_node_id);
     assert(canvas->selected_count() == 1);
 
@@ -2178,7 +2178,7 @@ int main(int argc, char* argv[]) {
     auto right_tri_id = canvas->add_custom_polygon_shape(center, {
       {0.0, 0.0}, {1.0, 1.0}, {0.0, 1.0}
     }, "Test Right Tri", 100.0, 80.0);
-    assert(right_tri_id != vector::core::InvalidNodeId);
+    assert(right_tri_id != madi::core::InvalidNodeId);
     auto* right_tri_node = canvas->graph_model()->find_node(right_tri_id);
     assert(right_tri_node != nullptr);
     assert(right_tri_node->polygon_vertices.size() == 3);
@@ -2200,7 +2200,7 @@ int main(int argc, char* argv[]) {
     }
 
     // F: Test Compact Selector in Tools Dock and Tool Mode synchronization
-    assert(canvas->tool_mode() == vector::renderer::ToolMode::Select);
+    assert(canvas->tool_mode() == madi::renderer::ToolMode::Select);
     QToolButton* select_btn = nullptr;
     QToolButton* wire_btn = nullptr;
     for (auto* btn : tool_buttons) {
@@ -2217,15 +2217,15 @@ int main(int argc, char* argv[]) {
     assert(!wire_btn->isChecked());
 
     // Switch tool to Connector mode
-    canvas->set_tool_mode(vector::renderer::ToolMode::AddConnector);
-    assert(canvas->tool_mode() == vector::renderer::ToolMode::AddConnector);
+    canvas->set_tool_mode(madi::renderer::ToolMode::AddConnector);
+    assert(canvas->tool_mode() == madi::renderer::ToolMode::AddConnector);
     assert(wire_btn->isChecked());
     assert(!select_btn->isChecked());
 
     // Hit ESC key -> must return to Select mode and update selector button state!
     QKeyEvent esc_key(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QApplication::sendEvent(canvas, &esc_key);
-    assert(canvas->tool_mode() == vector::renderer::ToolMode::Select);
+    assert(canvas->tool_mode() == madi::renderer::ToolMode::Select);
     assert(select_btn->isChecked());
     assert(!wire_btn->isChecked());
 
@@ -2244,7 +2244,7 @@ int main(int argc, char* argv[]) {
   // =========================================================================
   {
     std::cout << "\n[Test 35] Running Figure Interactive Rotation & Angle Snapping Tests..." << std::endl;
-    vector::gui::MainWindow win;
+    madi::gui::MainWindow win;
     win.resize(1024, 768);
     win.show();
     QApplication::processEvents();
@@ -2261,20 +2261,20 @@ int main(int argc, char* argv[]) {
     canvas->refresh_spatial_index();
 
     // 1. Add a rectangular figure at (300, 200) with size 100 x 60
-    vector::core::Node rot_node;
+    madi::core::Node rot_node;
     rot_node.id = 5001;
     rot_node.name = "Rotatable Block";
     rot_node.bounds = {300.0, 200.0, 100.0, 60.0};
     rot_node.rotation_deg = 0.0;
-    rot_node.shape = vector::core::ShapeType::Rectangle;
+    rot_node.shape = madi::core::ShapeType::Rectangle;
 
     // Add an East port (anchor = 1.0, 0.5)
-    vector::core::Port east_port;
+    madi::core::Port east_port;
     east_port.id = 6001;
     east_port.parent_node = 5001;
     east_port.name = "E_OUT";
     east_port.local_anchor = {1.0, 0.5};
-    east_port.direction = vector::core::PortDirection::East;
+    east_port.direction = madi::core::PortDirection::East;
     rot_node.port_ids.push_back(6001);
 
     const auto added_nid = model->add_node(std::move(rot_node));
@@ -2334,25 +2334,25 @@ int main(int argc, char* argv[]) {
     // When rotated 90° CW, the East port rotates around (350, 230) by 90° CW to (350, 280) (South)!
     const auto* p_port = model->find_port(6001);
     assert(p_port != nullptr);
-    vector::core::Vec2d p_pos_90 = n->resolve_port_position(*p_port);
+    madi::core::Vec2d p_pos_90 = n->resolve_port_position(*p_port);
     assert(std::abs(p_pos_90.x - 350.0) < 1e-3);
     assert(std::abs(p_pos_90.y - 280.0) < 1e-3);
 
     // Rotate to 180° -> East port rotates to (300, 230) (West)!
     canvas->set_node_rotation(added_nid, 180.0);
-    vector::core::Vec2d p_pos_180 = n->resolve_port_position(*p_port);
+    madi::core::Vec2d p_pos_180 = n->resolve_port_position(*p_port);
     assert(std::abs(p_pos_180.x - 300.0) < 1e-3);
     assert(std::abs(p_pos_180.y - 230.0) < 1e-3);
 
     // Rotate to 270° -> East port rotates to (350, 180) (North)!
     canvas->set_node_rotation(added_nid, 270.0);
-    vector::core::Vec2d p_pos_270 = n->resolve_port_position(*p_port);
+    madi::core::Vec2d p_pos_270 = n->resolve_port_position(*p_port);
     assert(std::abs(p_pos_270.x - 350.0) < 1e-3);
     assert(std::abs(p_pos_270.y - 180.0) < 1e-3);
 
     // Reset rotation to 0° -> port back at (400, 230)
     canvas->set_selected_nodes_rotation(0.0);
-    vector::core::Vec2d p_pos_0 = n->resolve_port_position(*p_port);
+    madi::core::Vec2d p_pos_0 = n->resolve_port_position(*p_port);
     assert(std::abs(p_pos_0.x - 400.0) < 1e-3);
     assert(std::abs(p_pos_0.y - 230.0) < 1e-3);
 
@@ -2520,7 +2520,7 @@ int main(int argc, char* argv[]) {
   // =========================================================================
   {
     std::cout << "\n[Test 36] Running Keyboard Shortcuts & Documentation Verification..." << std::endl;
-    vector::gui::MainWindow win;
+    madi::gui::MainWindow win;
     win.resize(1024, 768);
     win.show();
     QApplication::processEvents();
@@ -2532,31 +2532,31 @@ int main(int argc, char* argv[]) {
     // Ctrl+3 -> Connector / Wire Tool
     QKeyEvent key_ctrl3(QEvent::KeyPress, Qt::Key_3, Qt::ControlModifier);
     QApplication::sendEvent(canvas, &key_ctrl3);
-    assert(canvas->tool_mode() == vector::renderer::ToolMode::AddConnector);
+    assert(canvas->tool_mode() == madi::renderer::ToolMode::AddConnector);
 
     // Ctrl+8 -> Rectangle Block
     QKeyEvent key_ctrl8(QEvent::KeyPress, Qt::Key_8, Qt::ControlModifier);
     QApplication::sendEvent(canvas, &key_ctrl8);
-    assert(canvas->tool_mode() == vector::renderer::ToolMode::AddRectangle);
+    assert(canvas->tool_mode() == madi::renderer::ToolMode::AddRectangle);
 
     // Ctrl+9 -> State Ellipse
     QKeyEvent key_ctrl9(QEvent::KeyPress, Qt::Key_9, Qt::ControlModifier);
     QApplication::sendEvent(canvas, &key_ctrl9);
-    assert(canvas->tool_mode() == vector::renderer::ToolMode::AddEllipse);
+    assert(canvas->tool_mode() == madi::renderer::ToolMode::AddEllipse);
 
     // Ctrl+1 -> Pointer / Select Tool
     QKeyEvent key_ctrl1(QEvent::KeyPress, Qt::Key_1, Qt::ControlModifier);
     QApplication::sendEvent(canvas, &key_ctrl1);
-    assert(canvas->tool_mode() == vector::renderer::ToolMode::Select);
+    assert(canvas->tool_mode() == madi::renderer::ToolMode::Select);
 
     // Escape returns to Select mode
     QKeyEvent key_w(QEvent::KeyPress, Qt::Key_W, Qt::NoModifier);
     QApplication::sendEvent(canvas, &key_w);
-    assert(canvas->tool_mode() == vector::renderer::ToolMode::AddConnector);
+    assert(canvas->tool_mode() == madi::renderer::ToolMode::AddConnector);
 
     QKeyEvent key_esc(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QApplication::sendEvent(canvas, &key_esc);
-    assert(canvas->tool_mode() == vector::renderer::ToolMode::Select);
+    assert(canvas->tool_mode() == madi::renderer::ToolMode::Select);
 
     // 2. Test Grid & Snap Shortcuts (Shift+F9, F9, Alt+A)
     auto* grid_mgr = canvas->grid_manager();
@@ -2590,7 +2590,7 @@ int main(int argc, char* argv[]) {
     // 3. Test Rotation Shortcuts (Ctrl+R, Ctrl+Shift+R, Ctrl+L)
     auto* model = canvas->graph_model();
     assert(model != nullptr);
-    vector::core::Node test_node;
+    madi::core::Node test_node;
     test_node.id = 7001;
     test_node.name = "Shortcut Test Block";
     test_node.bounds = {200.0, 200.0, 100.0, 50.0};
@@ -2635,7 +2635,7 @@ int main(int argc, char* argv[]) {
     assert(act_help->shortcuts().contains(QKeySequence(Qt::Key_F1)));
 
     // Verify KeyboardShortcutsDialog instantiate and search filtering
-    vector::gui::KeyboardShortcutsDialog dlg(&win);
+    madi::gui::KeyboardShortcutsDialog dlg(&win);
     assert(dlg.windowTitle().contains("Shortcuts"));
 
     // Verify search filtering works without throwing
@@ -2647,7 +2647,7 @@ int main(int argc, char* argv[]) {
     // Test markdown export to clipboard
     dlg.copy_to_clipboard();
     const QString clip_text = QGuiApplication::clipboard()->text();
-    assert(clip_text.contains("VECTOR Keyboard Shortcuts"));
+    assert(clip_text.contains("Madí Keyboard Shortcuts"));
     assert(clip_text.contains("Ctrl+1"));
     assert(clip_text.contains("Ctrl+3"));
     assert(clip_text.contains("Shift+F9"));
@@ -2660,7 +2660,7 @@ int main(int argc, char* argv[]) {
   // =========================================================================
   {
     std::cout << "[Test 37] Testing Unified Mouse Pointer Placement and Drag-and-Drop..." << std::endl;
-    vector::gui::MainWindow win;
+    madi::gui::MainWindow win;
     win.show();
     auto* canvas = win.canvas();
     auto* shapes_dock = win.dock_shapes();
@@ -2691,8 +2691,8 @@ int main(int argc, char* argv[]) {
     // Double-click triggers item
     tree->itemDoubleClicked(right_tri_item, 0);
     assert(canvas->is_placement_tool_active());
-    assert(canvas->tool_mode() == vector::renderer::ToolMode::AddCustomShape);
-    assert(canvas->active_placement_template().category == vector::renderer::PlacementCategory::CustomPolygon);
+    assert(canvas->tool_mode() == madi::renderer::ToolMode::AddCustomShape);
+    assert(canvas->active_placement_template().category == madi::renderer::PlacementCategory::CustomPolygon);
     assert(canvas->active_placement_template().name == "Right Triangle");
     assert(canvas->placement_preview_bounds().is_valid());
     assert(canvas->placement_preview_bounds().width > 0.0);
@@ -2706,7 +2706,7 @@ int main(int argc, char* argv[]) {
 
     // Shape is now instantiated on canvas, and tool mode reverts to Select
     assert(!canvas->is_placement_tool_active());
-    assert(canvas->tool_mode() == vector::renderer::ToolMode::Select);
+    assert(canvas->tool_mode() == madi::renderer::ToolMode::Select);
     assert(canvas->graph_model()->node_count() == initial_nodes + 1);
 
     // Verify placed node properties
@@ -2714,7 +2714,7 @@ int main(int argc, char* argv[]) {
     const auto* placed_node = canvas->graph_model()->find_node(last_placed_id);
     assert(placed_node != nullptr);
     assert(placed_node->name == "Right Triangle");
-    assert(placed_node->shape == vector::core::ShapeType::CustomPolygon);
+    assert(placed_node->shape == madi::core::ShapeType::CustomPolygon);
     assert(placed_node->polygon_vertices.size() == 3);
     (void)initial_nodes; (void)placed_node;
 
@@ -2723,14 +2723,14 @@ int main(int argc, char* argv[]) {
     assert(star_item != nullptr);
     tree->itemDoubleClicked(star_item, 0);
     assert(canvas->is_placement_tool_active());
-    assert(canvas->tool_mode() == vector::renderer::ToolMode::AddCustomShape);
+    assert(canvas->tool_mode() == madi::renderer::ToolMode::AddCustomShape);
     assert(canvas->active_placement_template().name == "Star");
 
     // Click canvas to place Star
     const QPoint star_click(400, 300);
     QMouseEvent star_press(QEvent::MouseButtonPress, star_click, star_click, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
     QApplication::sendEvent(canvas, &star_press);
-    assert(canvas->tool_mode() == vector::renderer::ToolMode::Select);
+    assert(canvas->tool_mode() == madi::renderer::ToolMode::Select);
     assert(canvas->graph_model()->node_count() == initial_nodes + 2);
     const auto* star_node = canvas->graph_model()->find_node(canvas->selected_nodes().front());
     assert(star_node != nullptr);
@@ -2743,21 +2743,21 @@ int main(int argc, char* argv[]) {
     assert(hex_item != nullptr);
     tree->itemDoubleClicked(hex_item, 0);
     assert(canvas->is_placement_tool_active());
-    assert(canvas->active_placement_template().category == vector::renderer::PlacementCategory::RegularPolygon);
+    assert(canvas->active_placement_template().category == madi::renderer::PlacementCategory::RegularPolygon);
     assert(canvas->active_placement_template().polygon_sides == 6);
 
     // Cancel placement with Escape key
     QKeyEvent esc_key(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QApplication::sendEvent(canvas, &esc_key);
     assert(!canvas->is_placement_tool_active());
-    assert(canvas->tool_mode() == vector::renderer::ToolMode::Select);
+    assert(canvas->tool_mode() == madi::renderer::ToolMode::Select);
 
     // D: Test Hierarchical Ports
     auto* port_item = find_item("Hierarchical Input Port");
     assert(port_item != nullptr);
     tree->itemDoubleClicked(port_item, 0);
     assert(canvas->is_placement_tool_active());
-    assert(canvas->active_placement_template().category == vector::renderer::PlacementCategory::HierarchicalPort);
+    assert(canvas->active_placement_template().category == madi::renderer::PlacementCategory::HierarchicalPort);
     assert(canvas->active_placement_template().is_input_port == true);
 
     // Click canvas to place port
@@ -2777,11 +2777,11 @@ int main(int argc, char* argv[]) {
     const int d_param = diamond_item->data(0, Qt::UserRole + 1).toInt();
     const QString d_custom = diamond_item->data(0, Qt::UserRole + 2).toString();
 
-    auto d_tmpl = vector::gui::StencilLibraryDock::template_from_stencil_data(d_type, d_param, d_custom);
-    QByteArray d_bytes = vector::renderer::serialize_placement_template(d_tmpl);
+    auto d_tmpl = madi::gui::StencilLibraryDock::template_from_stencil_data(d_type, d_param, d_custom);
+    QByteArray d_bytes = madi::renderer::serialize_placement_template(d_tmpl);
 
     QMimeData* mime_data = new QMimeData();
-    mime_data->setData("application/x-vector-stencil", d_bytes);
+    mime_data->setData("application/x-madi-stencil", d_bytes);
 
     const QPoint drop_pt(320, 240);
 
@@ -2813,11 +2813,11 @@ int main(int argc, char* argv[]) {
     assert(cross_item != nullptr);
     const int c_type = cross_item->data(0, Qt::UserRole).toInt();
     const int c_param = cross_item->data(0, Qt::UserRole + 1).toInt();
-    auto c_tmpl = vector::gui::StencilLibraryDock::template_from_stencil_data(c_type, c_param, "");
-    QByteArray c_bytes = vector::renderer::serialize_placement_template(c_tmpl);
+    auto c_tmpl = madi::gui::StencilLibraryDock::template_from_stencil_data(c_type, c_param, "");
+    QByteArray c_bytes = madi::renderer::serialize_placement_template(c_tmpl);
 
     QMimeData* cross_mime = new QMimeData();
-    cross_mime->setData("application/x-vector-stencil", c_bytes);
+    cross_mime->setData("application/x-madi-stencil", c_bytes);
 
     const QPoint cross_pt(500, 350);
     QDragEnterEvent cross_enter(cross_pt, Qt::CopyAction, cross_mime, Qt::LeftButton, Qt::NoModifier);
@@ -2840,7 +2840,7 @@ int main(int argc, char* argv[]) {
   // 38. Test Symbol Instantiation Anchor & Drag-to-Resize Control Point
   {
     std::cout << "===> Testing Symbol Instantiation Anchor & Drag-to-Resize Control Point..." << std::endl;
-    vector::gui::MainWindow hwin;
+    madi::gui::MainWindow hwin;
     hwin.resize(1024, 768);
     auto* canvas = hwin.canvas();
     assert(canvas != nullptr);
@@ -2849,7 +2849,7 @@ int main(int argc, char* argv[]) {
     graph->clear();
 
     // A: Test Node defaults and property persistence
-    vector::core::Node test_node;
+    madi::core::Node test_node;
     assert(test_node.symbol_anchor().x == 0.0 && test_node.symbol_anchor().y == 0.0);
     assert(test_node.symbol_resize_point().x == 1.0 && test_node.symbol_resize_point().y == 1.0);
 
@@ -2864,16 +2864,16 @@ int main(int argc, char* argv[]) {
     assert(placed_node != nullptr);
 
     {
-      vector::gui::SymbolEditorDialog dlg(*placed_node, *graph, nullptr, &hwin);
+      madi::gui::SymbolEditorDialog dlg(*placed_node, *graph, nullptr, &hwin);
       dlg.refresh_preview();
       dlg.apply_and_accept();
     }
     assert(placed_node->symbol_anchor().x == 0.0 && placed_node->symbol_anchor().y == 0.5);
 
     // C: Test Interactive Drag-to-Resize Placement
-    vector::renderer::ShapePlacementTemplate tmpl;
-    tmpl.category = vector::renderer::PlacementCategory::ShapeType;
-    tmpl.shape_type = vector::core::ShapeType::Rectangle;
+    madi::renderer::ShapePlacementTemplate tmpl;
+    tmpl.category = madi::renderer::PlacementCategory::ShapeType;
+    tmpl.shape_type = madi::core::ShapeType::Rectangle;
     tmpl.name = "ResizedSymbol";
     tmpl.width = 100.0;
     tmpl.height = 50.0;
@@ -2981,7 +2981,7 @@ int main(int argc, char* argv[]) {
   // 39. Test Smart Parametric Shape Handles (Arrow Points & Attached Lines Modification)
   {
     std::cout << "===> Testing Smart Parametric Shape Handles (Arrow Points & Attached Lines)..." << std::endl;
-    vector::gui::MainWindow hwin;
+    madi::gui::MainWindow hwin;
     hwin.resize(1024, 768);
     auto* canvas = hwin.canvas();
     assert(canvas != nullptr);
@@ -2990,9 +2990,9 @@ int main(int argc, char* argv[]) {
     graph->clear();
 
     // 1. Create Arrow Block shape
-    vector::core::Node arrow_node;
+    madi::core::Node arrow_node;
     arrow_node.name = "Arrow Block";
-    arrow_node.shape = vector::core::ShapeType::CustomPolygon;
+    arrow_node.shape = madi::core::ShapeType::CustomPolygon;
     arrow_node.bounds = {100.0, 100.0, 200.0, 100.0};
     arrow_node.polygon_vertices = {
       {0.0, 0.2}, {0.6, 0.2}, {0.6, 0.0},
@@ -3000,7 +3000,7 @@ int main(int argc, char* argv[]) {
     };
     arrow_node.properties["parametric_type"] = "arrow";
     const auto nid = graph->add_node(std::move(arrow_node));
-    assert(nid != vector::core::InvalidNodeId);
+    assert(nid != madi::core::InvalidNodeId);
 
     // 2. Select the arrow
     canvas->select_node(nid, false);
@@ -3009,8 +3009,8 @@ int main(int argc, char* argv[]) {
     // 3. Verify parametric kind and handles
     const auto* node = graph->find_node(nid);
     assert(node != nullptr);
-    assert(vector::core::get_parametric_kind(*node) == vector::core::ParametricShapeKind::Arrow);
-    const auto handles = vector::core::get_parametric_handles(*node);
+    assert(madi::core::get_parametric_kind(*node) == madi::core::ParametricShapeKind::Arrow);
+    const auto handles = madi::core::get_parametric_handles(*node);
     assert(handles.size() == 5);
     assert(handles[0].normalized_pos.x == 0.6 && handles[0].normalized_pos.y == 0.2); // Top shoulder
     assert(handles[1].normalized_pos.x == 0.6 && handles[1].normalized_pos.y == 0.8); // Bottom shoulder
@@ -3018,9 +3018,9 @@ int main(int argc, char* argv[]) {
     // 4. Hit test top shoulder point handle
     // World point of handle 0: (100 + 0.6 * 200, 100 + 0.2 * 100) = (220, 120)
     const auto s_h0 = canvas->world_to_screen({220.0, 120.0});
-    vector::core::NodeId hit_node = vector::core::InvalidNodeId;
+    madi::core::NodeId hit_node = madi::core::InvalidNodeId;
     const auto ht0 = canvas->hit_test_handles(s_h0, &hit_node);
-    assert(ht0 == vector::renderer::HandleType::ParametricPoint0);
+    assert(ht0 == madi::renderer::HandleType::ParametricPoint0);
     assert(hit_node == nid);
     (void)ht0;
 
@@ -3029,7 +3029,7 @@ int main(int argc, char* argv[]) {
     assert(!canvas->is_segment_moving_enabled());
     const auto s_line_sh = canvas->world_to_screen({220.0, 150.0});
     const auto ht_sh_disabled = canvas->hit_test_handles(s_line_sh, &hit_node);
-    assert(ht_sh_disabled == vector::renderer::HandleType::None);
+    assert(ht_sh_disabled == madi::renderer::HandleType::None);
     (void)ht_sh_disabled;
 
     // Enable segment moving: line handles become interactive
@@ -3037,13 +3037,13 @@ int main(int argc, char* argv[]) {
     assert(canvas->is_segment_moving_enabled());
     assert(canvas->is_segment_moving_active());
     const auto ht_sh = canvas->hit_test_handles(s_line_sh, &hit_node);
-    assert(ht_sh == vector::renderer::HandleType::ParametricLineShoulder);
+    assert(ht_sh == madi::renderer::HandleType::ParametricLineShoulder);
     (void)ht_sh;
 
     // 6. Hit test top shaft line (e.g. at world 160, 120)
     const auto s_line_st = canvas->world_to_screen({160.0, 120.0});
     const auto ht_st = canvas->hit_test_handles(s_line_st, &hit_node);
-    assert(ht_st == vector::renderer::HandleType::ParametricLineShaftTop);
+    assert(ht_st == madi::renderer::HandleType::ParametricLineShaftTop);
     (void)ht_st;
 
     // 7. Test dragging top shoulder point horizontally (freeform by default)
@@ -3121,7 +3121,7 @@ int main(int argc, char* argv[]) {
   // 40. Test Custom Control Points & Vertex Editing (Symbol Editor & Drawing Area)
   {
     std::cout << "===> Testing Custom Control Points & Vertex Editing (Symbol Editor & Drawing Area)..." << std::endl;
-    vector::gui::MainWindow hwin;
+    madi::gui::MainWindow hwin;
     hwin.resize(1024, 768);
     auto* canvas = hwin.canvas();
     assert(canvas != nullptr);
@@ -3130,16 +3130,16 @@ int main(int argc, char* argv[]) {
     graph->clear();
 
     // 1. Test Control Point Configuration in SymbolEditorDialog
-    vector::core::Node test_node;
+    madi::core::Node test_node;
     test_node.name = "CustomEDAComponent";
-    test_node.shape = vector::core::ShapeType::Rectangle;
+    test_node.shape = madi::core::ShapeType::Rectangle;
     test_node.bounds = {150.0, 150.0, 200.0, 120.0};
     const auto nid = graph->add_node(std::move(test_node));
     auto* placed_node = graph->find_node(nid);
     assert(placed_node != nullptr);
 
     {
-      vector::gui::SymbolEditorDialog dlg(*placed_node, *graph, nullptr, &hwin);
+      madi::gui::SymbolEditorDialog dlg(*placed_node, *graph, nullptr, &hwin);
       // Default rectangle initial control points (4 corners)
       assert(dlg.control_points().size() == 4);
       assert(dlg.point_table_->rowCount() == 4);
@@ -3166,7 +3166,7 @@ int main(int argc, char* argv[]) {
 
     // Verify node updated with custom control points and shape
     assert(placed_node->polygon_vertices.size() == 5);
-    assert(placed_node->shape == vector::core::ShapeType::CustomPolygon);
+    assert(placed_node->shape == madi::core::ShapeType::CustomPolygon);
     assert(placed_node->properties["parametric_type"] == "custom_polygon");
 
     // 2. Test Control Point Insertion & Editing in Main Drawing Area
@@ -3192,14 +3192,14 @@ int main(int argc, char* argv[]) {
 
     // 3. Test Moving the Control Point (and Attached Lines)
     const int new_pt_idx = 1;
-    const auto pt_handle = vector::renderer::make_parametric_point_handle(new_pt_idx);
+    const auto pt_handle = madi::renderer::make_parametric_point_handle(new_pt_idx);
     // Drag point to (250, 130) -> ny becomes (130 - 150)/120 < 0 -> clamped to 0.0
     // Drag to (250, 170) -> ny = (170 - 150)/120 = 0.1667
     canvas->apply_parametric_drag(*placed_node, pt_handle, {250.0, 170.0}, false);
     assert(std::abs(placed_node->polygon_vertices[new_pt_idx].y - ((170.0 - 150.0) / 120.0)) < 1e-3);
 
     // 4. Test Moving Attached Line Segment
-    const auto line_handle = vector::renderer::make_parametric_line_handle(new_pt_idx);
+    const auto line_handle = madi::renderer::make_parametric_line_handle(new_pt_idx);
     const double before_x1 = placed_node->polygon_vertices[new_pt_idx].x;
     canvas->apply_parametric_drag(*placed_node, line_handle, {270.0, 170.0}, false);
     // Line drag moves both vertices of the segment
@@ -3229,8 +3229,8 @@ int main(int argc, char* argv[]) {
     assert(placed_node->polygon_vertices.size() == pre_rem_count);
 
     // 7. Test New Shapes Instant Control Point Creation
-    const auto new_shape_id = canvas->add_shape(vector::core::ShapeType::Rectangle, {500.0, 400.0}, "NewBox", false);
-    assert(new_shape_id != vector::core::InvalidNodeId);
+    const auto new_shape_id = canvas->add_shape(madi::core::ShapeType::Rectangle, {500.0, 400.0}, "NewBox", false);
+    assert(new_shape_id != madi::core::InvalidNodeId);
     auto* new_shape = graph->find_node(new_shape_id);
     assert(new_shape != nullptr);
     assert(new_shape->polygon_vertices.empty());
@@ -3238,7 +3238,7 @@ int main(int argc, char* argv[]) {
     // Insert point immediately on new shape -> converts to polygon and inserts point
     const bool new_ins_ok = canvas->insert_control_point_at_world(new_shape_id, {500.0, 370.0});
     assert(new_ins_ok);
-    assert(new_shape->shape == vector::core::ShapeType::CustomPolygon);
+    assert(new_shape->shape == madi::core::ShapeType::CustomPolygon);
     assert(new_shape->polygon_vertices.size() == 5);
     (void)new_shape;
     (void)new_ins_ok;
@@ -3252,7 +3252,7 @@ int main(int argc, char* argv[]) {
   // 41. Test Command Console Shape & Control Point Scripting with Code
   {
     std::cout << "===> Testing Command Console Shape & Control Point Scripting with Code..." << std::endl;
-    vector::gui::MainWindow hwin;
+    madi::gui::MainWindow hwin;
     hwin.resize(1024, 768);
     auto* canvas = hwin.canvas();
     assert(canvas != nullptr);
@@ -3295,7 +3295,7 @@ int main(int argc, char* argv[]) {
     auto* n3 = graph->find_node_by_name("CodeArrow");
     assert(n3 != nullptr);
     assert(n3->polygon_vertices.size() == 7);
-    assert(vector::core::get_parametric_kind(*n3) == vector::core::ParametricShapeKind::Arrow);
+    assert(madi::core::get_parametric_kind(*n3) == madi::core::ParametricShapeKind::Arrow);
 
     // 5. Modify shape with code on selected node
     canvas->select_node(n1->id, false);
@@ -3359,12 +3359,12 @@ int main(int argc, char* argv[]) {
   // 42. Test Bidirectional Port Visual Differentiation, Stencil Custom Sections, Built-in Protection & Canvas Drag-to-Shapes
   {
     std::cout << "\n[Test 42] Testing Bidirectional Port Differentiation & Shapes Custom Sections..." << std::endl;
-    vector::gui::MainWindow win;
+    madi::gui::MainWindow win;
     win.show();
 
     auto* canvas = win.canvas();
     auto* graph = win.graph_model();
-    auto* stencil_dock = win.findChild<vector::gui::StencilLibraryDock*>("ShapesDock");
+    auto* stencil_dock = win.findChild<madi::gui::StencilLibraryDock*>("ShapesDock");
     assert(canvas != nullptr && graph != nullptr && stencil_dock != nullptr);
 
     // 1. Port Visual Differentiation (InputPort vs OutputPort vs BidirectionalPort)
@@ -3378,9 +3378,9 @@ int main(int argc, char* argv[]) {
     assert(in_node != nullptr && out_node != nullptr && bi_node != nullptr);
 
     // Check ShapeType
-    assert(in_node->shape == vector::core::ShapeType::InputPort);
-    assert(out_node->shape == vector::core::ShapeType::OutputPort);
-    assert(bi_node->shape == vector::core::ShapeType::BidirectionalPort);
+    assert(in_node->shape == madi::core::ShapeType::InputPort);
+    assert(out_node->shape == madi::core::ShapeType::OutputPort);
+    assert(bi_node->shape == madi::core::ShapeType::BidirectionalPort);
 
     // Check helper predicates
     assert(in_node->is_input_port() && !in_node->is_output_port() && !in_node->is_bidirectional_port());
@@ -3401,8 +3401,8 @@ int main(int argc, char* argv[]) {
     const auto* bi_p1 = graph->find_port(bi_node->port_ids[0]);
     const auto* bi_p2 = graph->find_port(bi_node->port_ids[1]);
     assert(bi_p1 != nullptr && bi_p2 != nullptr);
-    assert((bi_p1->direction == vector::core::PortDirection::East && bi_p2->direction == vector::core::PortDirection::West) ||
-           (bi_p1->direction == vector::core::PortDirection::West && bi_p2->direction == vector::core::PortDirection::East));
+    assert((bi_p1->direction == madi::core::PortDirection::East && bi_p2->direction == madi::core::PortDirection::West) ||
+           (bi_p1->direction == madi::core::PortDirection::West && bi_p2->direction == madi::core::PortDirection::East));
 
     // Render frame to ensure paintGL renders badges cleanly
     canvas->render_frame_for_test();
@@ -3434,7 +3434,7 @@ int main(int argc, char* argv[]) {
 
     // Add elements into user custom section
     auto* custom_item = stencil_dock->add_shape_item(
-        "LDO Regulator", vector::gui::StencilLibraryDock::StencilItemType::ShapeRect, 0, "⚡ Power & Mixed-Signal");
+        "LDO Regulator", madi::gui::StencilLibraryDock::StencilItemType::ShapeRect, 0, "⚡ Power & Mixed-Signal");
     assert(custom_item != nullptr);
     assert(stencil_dock->has_shape("LDO Regulator"));
     assert(!stencil_dock->is_item_builtin(custom_item));
@@ -3453,10 +3453,10 @@ int main(int argc, char* argv[]) {
     assert(stencil_dock->has_shape("bus_io"));
 
     // Test direct drop handling via handle_dropped_template
-    vector::renderer::ShapePlacementTemplate drop_tmpl;
+    madi::renderer::ShapePlacementTemplate drop_tmpl;
     drop_tmpl.name = "CustomBidirectionalTransceiver";
-    drop_tmpl.category = vector::renderer::PlacementCategory::HierarchicalPort;
-    drop_tmpl.shape_type = vector::core::ShapeType::BidirectionalPort;
+    drop_tmpl.category = madi::renderer::PlacementCategory::HierarchicalPort;
+    drop_tmpl.shape_type = madi::core::ShapeType::BidirectionalPort;
     drop_tmpl.port_type = "inout";
     drop_tmpl.width = 110.0;
     drop_tmpl.height = 34.0;
@@ -3472,7 +3472,7 @@ int main(int argc, char* argv[]) {
     stencil_dock->trigger_item(dropped_node_item);
     assert(canvas->is_placement_tool_active());
     assert(canvas->active_placement_template().name == "CustomBidirectionalTransceiver");
-    assert(canvas->active_placement_template().shape_type == vector::core::ShapeType::BidirectionalPort);
+    assert(canvas->active_placement_template().shape_type == madi::core::ShapeType::BidirectionalPort);
     assert(canvas->active_placement_template().port_type == "inout");
 
     (void)in_node;
@@ -3498,7 +3498,7 @@ int main(int argc, char* argv[]) {
   // 43. Test Multi-Point Arrow Connector & Mouse Button 8 (Undo) / Mouse Button 9 (Redo) Shortcuts
   {
     std::cout << "\n[Test 43] Testing Multi-Point Arrow Connector & Mouse Button 8/9 Undo/Redo..." << std::endl;
-    vector::gui::MainWindow win;
+    madi::gui::MainWindow win;
     win.show();
 
     auto* canvas = win.canvas();
@@ -3506,15 +3506,15 @@ int main(int argc, char* argv[]) {
     assert(canvas != nullptr && graph != nullptr);
 
     // 1. Test Multi-Point Arrow Connector Creation & Verification
-    canvas->set_tool_mode(vector::renderer::ToolMode::AddMultiPointArrow);
+    canvas->set_tool_mode(madi::renderer::ToolMode::AddMultiPointArrow);
     assert(canvas->is_multipoint_arrow_active());
-    assert(canvas->tool_mode() == vector::renderer::ToolMode::AddMultiPointArrow);
+    assert(canvas->tool_mode() == madi::renderer::ToolMode::AddMultiPointArrow);
 
-    const std::vector<vector::core::Vec2d> waypoints = {
+    const std::vector<madi::core::Vec2d> waypoints = {
       {40.0, 60.0}, {120.0, 60.0}, {120.0, 180.0}, {240.0, 180.0}
     };
     const auto arrow_eid = canvas->add_multipoint_arrow(waypoints);
-    assert(arrow_eid != vector::core::InvalidEdgeId);
+    assert(arrow_eid != madi::core::InvalidEdgeId);
 
     const auto* arrow_edge = graph->find_edge(arrow_eid);
     assert(arrow_edge != nullptr);
@@ -3547,9 +3547,9 @@ int main(int argc, char* argv[]) {
     assert(graph->edge_count() == edge_count_after_arrow);
 
     // 3. Test ToolMode::AddBidirectionalPort activation & properties
-    canvas->set_tool_mode(vector::renderer::ToolMode::AddBidirectionalPort);
+    canvas->set_tool_mode(madi::renderer::ToolMode::AddBidirectionalPort);
     assert(canvas->is_placement_tool_active());
-    assert(canvas->active_placement_template().shape_type == vector::core::ShapeType::BidirectionalPort);
+    assert(canvas->active_placement_template().shape_type == madi::core::ShapeType::BidirectionalPort);
     assert(canvas->active_placement_template().port_type == "inout");
     canvas->cancel_placement();
     assert(!canvas->is_placement_tool_active());

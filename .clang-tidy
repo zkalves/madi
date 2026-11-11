@@ -17,7 +17,7 @@ Checks: >
   -readability-identifier-length,
   -readability-function-cognitive-complexity
 WarningsAsErrors: ''
-HeaderFilterRegex: 'include/vector/.*\.hpp$'
+HeaderFilterRegex: 'include/madi/.*\.hpp$'
 FormatStyle: file
 CheckOptions:
   - key: readability-identifier-naming.ClassCase

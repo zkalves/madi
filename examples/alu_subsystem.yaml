@@ -1,4 +1,4 @@
-# VECTOR Diagram Model - Deterministic YAML Format
+# Madí Diagram Model - Deterministic YAML Format
 schema_version: 1
 nodes:
   - id: 1
@@ -6,6 +6,6 @@ nodes:
     shape: 3
     bounds: [140.0000, 100.0000, 180.0000, 90.0000]
     properties:
-      embedded_graph_yaml: "# VECTOR Diagram Model - Deterministic YAML Format\nschema_version: 1\nnodes:\nedges:\n"
+      embedded_graph_yaml: "# Madí Diagram Model - Deterministic YAML Format\nschema_version: 1\nnodes:\nedges:\n"
       subsystem_type: "builtin"
 edges:

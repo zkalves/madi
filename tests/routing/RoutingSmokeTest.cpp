@@ -1,13 +1,13 @@
-// VECTOR - Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing
-// Copyright (C) 2026 VECTOR Contributors
+// Madí - Model, Align & Diagram Interconnects
+// Copyright (C) 2026 Madí Contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "vector/routing/RouterWorker.hpp"
+#include "madi/routing/RouterWorker.hpp"
 
 #include <cassert>
 #include <iostream>
 
-using namespace vector;
+using namespace madi;
 
 int main() {
   std::cout << "===> Running RoutingSmokeTest...\n";

@@ -1,4 +1,4 @@
-# Podman Containerfile for VECTOR
+# Podman Containerfile for Madí
 # Direct alias / symlink to Dockerfile
 FROM ubuntu:24.04 AS builder
 
@@ -38,13 +38,13 @@ RUN DESTDIR=/staging cmake --install build
 # ------------------------------------------------------------------------------
 FROM ubuntu:24.04 AS runtime
 
-LABEL org.opencontainers.image.title="VECTOR" \
-      org.opencontainers.image.description="Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing" \
+LABEL org.opencontainers.image.title="Madí" \
+      org.opencontainers.image.description="Model, Align & Diagram Interconnects" \
       org.opencontainers.image.licenses="GPL-3.0-or-later"
 
 ENV DEBIAN_FRONTEND=noninteractive \
     QT_QPA_PLATFORM=xcb \
-    XDG_RUNTIME_DIR=/tmp/runtime-vector
+    XDG_RUNTIME_DIR=/tmp/runtime-madi
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libqt6core6 \
@@ -79,12 +79,12 @@ COPY --from=builder /staging /
 COPY packaging/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-RUN useradd -m -s /bin/bash -u 1000 vector && \
-    mkdir -p /tmp/runtime-vector && \
-    chown -R vector:vector /tmp/runtime-vector
+RUN useradd -m -s /bin/bash -u 1000 madi && \
+    mkdir -p /tmp/runtime-madi && \
+    chown -R madi:madi /tmp/runtime-madi
 
-USER vector
-WORKDIR /home/vector
+USER madi
+WORKDIR /home/madi
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["vector-gui"]
+CMD ["madi-gui"]

@@ -1,9 +1,9 @@
-// VECTOR - Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing
-// Copyright (C) 2026 VECTOR Contributors
+// Madí - Model, Align & Diagram Interconnects
+// Copyright (C) 2026 Madí Contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "vector/gui/MainWindow.hpp"
+#include "madi/gui/MainWindow.hpp"
 
-namespace vector::gui {
+namespace madi::gui {
 // Explicit template / class compilation unit for MainWindow
-} // namespace vector::gui
+} // namespace madi::gui

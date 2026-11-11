@@ -1,4 +1,4 @@
-# VECTOR Diagram Model - Deterministic YAML Format
+# Madí Diagram Model - Deterministic YAML Format
 # Example: Hierarchical Controller with Subsystem Scopes
 schema_version: 1
 nodes:
@@ -17,7 +17,7 @@ nodes:
     bounds: [320.0000, 100.0000, 200.0000, 120.0000]
     properties:
       subsystem_type: "builtin"
-      embedded_graph_yaml: "# VECTOR Subsystem Internal Diagram\nschema_version: 1\nnodes:\n  - id: 10\n    name: \"FIR Filter Bank\"\n    shape: 0\n    bounds: [100.0, 80.0, 140.0, 70.0]\n  - id: 20\n    name: \"FFT Accelerator\"\n    shape: 0\n    bounds: [320.0, 80.0, 140.0, 70.0]\nedges:\n  - id: 101\n    source_node: 10\n    target_node: 20\n    arrowhead: \"classic\"\n    waypoints:\n      - [240.0, 115.0]\n      - [320.0, 115.0]\n"
+      embedded_graph_yaml: "# Madí Subsystem Internal Diagram\nschema_version: 1\nnodes:\n  - id: 10\n    name: \"FIR Filter Bank\"\n    shape: 0\n    bounds: [100.0, 80.0, 140.0, 70.0]\n  - id: 20\n    name: \"FFT Accelerator\"\n    shape: 0\n    bounds: [320.0, 80.0, 140.0, 70.0]\nedges:\n  - id: 101\n    source_node: 10\n    target_node: 20\n    arrowhead: \"classic\"\n    waypoints:\n      - [240.0, 115.0]\n      - [320.0, 115.0]\n"
     ports:
       - id: 21
         name: "RawIn"

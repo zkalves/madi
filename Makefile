@@ -106,8 +106,6 @@ test-gui: configure ## Run Qt6 GUI self-test in offscreen mode
 		QT_QPA_PLATFORM=offscreen "$(BUILD_DIR)/madi-gui" --self-test; \
 	elif [ -x "$(BUILD_DIR)/bin/madi-gui" ]; then \
 		QT_QPA_PLATFORM=offscreen "$(BUILD_DIR)/bin/madi-gui" --self-test; \
-	elif [ -x "$(BUILD_DIR)/vector-gui" ]; then \
-		QT_QPA_PLATFORM=offscreen "$(BUILD_DIR)/vector-gui" --self-test; \
 	else \
 		find $(BUILD_DIR) -name "madi-gui" -type f -executable -exec env QT_QPA_PLATFORM=offscreen {} --self-test \; ; \
 	fi
@@ -204,7 +202,7 @@ appimage: ## Build standalone Linux AppImage bundle
 	./packaging/appimage/build-appimage.sh
 
 docker: ## Build multi-stage OCI container image with Docker
-	docker build -t madi:latest -t vector:latest -f packaging/docker/Dockerfile .
+	docker build -t madi:latest -f packaging/docker/Dockerfile .
 
 podman: ## Build multi-stage OCI container image with Podman
-	podman build -t madi:latest -t vector:latest -f packaging/docker/Dockerfile .
+	podman build -t madi:latest -f packaging/docker/Dockerfile .

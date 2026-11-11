@@ -1,14 +1,14 @@
-// VECTOR - Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing
-// Copyright (C) 2026 VECTOR Contributors
+// Madí - Model, Align & Diagram Interconnects
+// Copyright (C) 2026 Madí Contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "vector/renderer/CanvasRenderer.hpp"
+#include "madi/renderer/CanvasRenderer.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 
-namespace vector::renderer {
+namespace madi::renderer {
 
 namespace {
 
@@ -38,7 +38,7 @@ namespace {
 } // namespace
 
 struct CanvasRenderer::SkiaBackendOpaque {
-  // Opaque handle for Skia GrDirectContext & SkSurface when compiled with VECTOR_ENABLE_SKIA
+  // Opaque handle for Skia GrDirectContext & SkSurface when compiled with MADI_ENABLE_SKIA
   void* gr_context{nullptr};
   void* sk_surface{nullptr};
 };
@@ -51,7 +51,7 @@ CanvasRenderer::CanvasRenderer()
 CanvasRenderer::~CanvasRenderer() = default;
 
 bool CanvasRenderer::initialize_gpu(void* gl_context) {
-#ifdef VECTOR_ENABLE_SKIA
+#ifdef MADI_ENABLE_SKIA
   // GrDirectContext::MakeGL(...) initialization
   skia_backend_->gr_context = gl_context;
   active_backend_ = RendererBackend::OpenGL;
@@ -307,7 +307,7 @@ void CanvasRenderer::draw_node(const core::Node& node, const RenderContext& ctx,
         }
       }
     }
-#ifndef VECTOR_ENABLE_QT
+#ifndef MADI_ENABLE_QT
     for (const auto& s_pts : all_screen_pts) {
       const size_t pt_count = s_pts.size();
       if (pt_count < 2) continue;
@@ -619,4 +619,4 @@ size_t CanvasRenderer::software_buffer_pitch() const noexcept {
   return static_cast<size_t>(width_) * sizeof(uint32_t);
 }
 
-} // namespace vector::renderer
+} // namespace madi::renderer

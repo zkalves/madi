@@ -3,13 +3,13 @@
 // Copyright (C) 2026 Madí Contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "vector/core/Geometry.hpp"
-#include "vector/core/GraphModel.hpp"
-#include "vector/core/HierarchicalBlock.hpp"
-#include "vector/core/SpatialIndex.hpp"
-#include "vector/io/DrawioParser.hpp"
-#include "vector/io/StorageEngine.hpp"
-#include "vector/routing/RouterWorker.hpp"
+#include "madi/core/Geometry.hpp"
+#include "madi/core/GraphModel.hpp"
+#include "madi/core/HierarchicalBlock.hpp"
+#include "madi/core/SpatialIndex.hpp"
+#include "madi/io/DrawioParser.hpp"
+#include "madi/io/StorageEngine.hpp"
+#include "madi/routing/RouterWorker.hpp"
 
 #include <algorithm>
 #include <fstream>
@@ -32,7 +32,7 @@ void print_help(std::string_view prog_name) {
   std::cout << "  --export-svg <in> <out>    Export diagram directly to SVG vector image\n";
 }
 
-bool load_diagram(const std::string& file_path, vector::core::GraphModel& model, std::string& err) {
+bool load_diagram(const std::string& file_path, madi::core::GraphModel& model, std::string& err) {
   std::ifstream in(file_path);
   if (!in.is_open()) {
     err = "Unable to open input file: " + file_path;
@@ -42,14 +42,14 @@ bool load_diagram(const std::string& file_path, vector::core::GraphModel& model,
                        std::istreambuf_iterator<char>());
 
   if (file_path.ends_with(".drawio") || file_path.ends_with(".xml")) {
-    vector::io::DrawioParser parser;
+    madi::io::DrawioParser parser;
     auto res = parser.import_xml(content, model);
     if (!res.success) {
       err = "Draw.io parser error: " + res.error_message;
       return false;
     }
   } else {
-    vector::io::StorageEngine storage;
+    madi::io::StorageEngine storage;
     auto res = storage.deserialize_yaml(content, model);
     if (!res.success) {
       err = "YAML deserializer error: " + res.error_message;
@@ -59,7 +59,7 @@ bool load_diagram(const std::string& file_path, vector::core::GraphModel& model,
   return true;
 }
 
-bool save_diagram(const std::string& file_path, const vector::core::GraphModel& model, std::string& err) {
+bool save_diagram(const std::string& file_path, const madi::core::GraphModel& model, std::string& err) {
   std::ofstream out(file_path);
   if (!out.is_open()) {
     err = "Unable to open output file for writing: " + file_path;
@@ -67,16 +67,16 @@ bool save_diagram(const std::string& file_path, const vector::core::GraphModel& 
   }
 
   if (file_path.ends_with(".drawio") || file_path.ends_with(".xml")) {
-    vector::io::DrawioParser parser;
+    madi::io::DrawioParser parser;
     out << parser.export_xml(model);
   } else {
-    vector::io::StorageEngine storage;
+    madi::io::StorageEngine storage;
     out << storage.serialize_yaml(model);
   }
   return true;
 }
 
-std::string render_svg(const vector::core::GraphModel& model) {
+std::string render_svg(const madi::core::GraphModel& model) {
   double min_x = 1e9, min_y = 1e9, max_x = -1e9, max_y = -1e9;
   bool has_content = false;
 
@@ -138,7 +138,7 @@ std::string render_svg(const vector::core::GraphModel& model) {
       ss << "  <text x=\"" << cx << "\" y=\"" << cy << "\" font-family=\"Inter, sans-serif\" font-size=\"12\" fill=\"#0F172A\" text-anchor=\"middle\" dominant-baseline=\"central\">"
          << n.name << "</text>\n";
     }
-    for (vector::core::PortId pid : n.port_ids) {
+    for (madi::core::PortId pid : n.port_ids) {
       if (const auto* p = model.find_port(pid)) {
         auto pt = n.resolve_port_position(*p);
         ss << "  <circle cx=\"" << pt.x << "\" cy=\"" << pt.y << "\" r=\"3.5\" fill=\"#0EA5E9\" stroke=\"#0F172A\" stroke-width=\"1.0\"/>\n";
@@ -169,7 +169,7 @@ int main(int argc, char* argv[]) {
     return 0;
   } else if (arg1 == "--stats" && argc >= 3) {
     const std::string file_path = argv[2];
-    vector::core::GraphModel model;
+    madi::core::GraphModel model;
     std::string err;
     if (!load_diagram(file_path, model, err)) {
       std::cerr << "Error: " << err << "\n";
@@ -187,7 +187,7 @@ int main(int argc, char* argv[]) {
   } else if (arg1 == "--convert" && argc >= 4) {
     const std::string in_path = argv[2];
     const std::string out_path = argv[3];
-    vector::core::GraphModel model;
+    madi::core::GraphModel model;
     std::string err;
     if (!load_diagram(in_path, model, err)) {
       std::cerr << "Error: " << err << "\n";
@@ -203,14 +203,14 @@ int main(int argc, char* argv[]) {
   } else if (arg1 == "--route" && argc >= 4) {
     const std::string in_path = argv[2];
     const std::string out_path = argv[3];
-    vector::core::GraphModel model;
+    madi::core::GraphModel model;
     std::string err;
     if (!load_diagram(in_path, model, err)) {
       std::cerr << "Error: " << err << "\n";
       return 1;
     }
 
-    vector::routing::RouteBatchRequest req;
+    madi::routing::RouteBatchRequest req;
     for (const auto& [nid, node] : model.nodes()) {
       req.obstacles.push_back({nid, node.bounds, 8.0});
     }
@@ -220,18 +220,18 @@ int main(int argc, char* argv[]) {
       const auto* src_port = model.find_port(edge.source_port);
       const auto* tgt_port = model.find_port(edge.target_port);
       if (src_node && tgt_node) {
-        vector::routing::RouteNetRequest net;
+        madi::routing::RouteNetRequest net;
         net.edge_id = eid;
         net.source_point = src_port ? src_node->resolve_port_position(*src_port) : src_node->bounds.center();
-        net.source_direction = src_port ? src_port->direction : vector::core::PortDirection::Omnidirectional;
+        net.source_direction = src_port ? src_port->direction : madi::core::PortDirection::Omnidirectional;
         net.target_point = tgt_port ? tgt_node->resolve_port_position(*tgt_port) : tgt_node->bounds.center();
-        net.target_direction = tgt_port ? tgt_port->direction : vector::core::PortDirection::Omnidirectional;
+        net.target_direction = tgt_port ? tgt_port->direction : madi::core::PortDirection::Omnidirectional;
         net.routing_style = edge.routing_style;
         req.nets.push_back(net);
       }
     }
 
-    vector::routing::OrthogonalAvoidanceEngine router;
+    madi::routing::OrthogonalAvoidanceEngine router;
     auto res = router.compute_routes(req);
     for (const auto& r : res.results) {
       if (r.success) {
@@ -250,7 +250,7 @@ int main(int argc, char* argv[]) {
   } else if (arg1 == "--export-svg" && argc >= 4) {
     const std::string in_path = argv[2];
     const std::string out_path = argv[3];
-    vector::core::GraphModel model;
+    madi::core::GraphModel model;
     std::string err;
     if (!load_diagram(in_path, model, err)) {
       std::cerr << "Error: " << err << "\n";

@@ -1,1 +1,1 @@
-namespace vector::core {}
+namespace madi::core {}

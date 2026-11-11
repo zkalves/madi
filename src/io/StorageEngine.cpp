@@ -1,8 +1,8 @@
-// VECTOR - Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing
-// Copyright (C) 2026 VECTOR Contributors
+// Madí - Model, Align & Diagram Interconnects
+// Copyright (C) 2026 Madí Contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "vector/io/StorageEngine.hpp"
+#include "madi/io/StorageEngine.hpp"
 
 #include <algorithm>
 #include <fstream>
@@ -10,7 +10,7 @@
 #include <map>
 #include <sstream>
 
-namespace vector::io {
+namespace madi::io {
 
 namespace {
 
@@ -46,7 +46,7 @@ std::string trim(std::string_view s) {
 std::string StorageEngine::serialize_yaml(const core::GraphModel& graph,
                                           const core::BlockLibraryManager* lib_manager) const {
   std::ostringstream ss;
-  ss << "# VECTOR Diagram Model - Deterministic YAML Format\n";
+  ss << "# Madí Diagram Model - Deterministic YAML Format\n";
   ss << "schema_version: 1\n";
 
   // Deterministically sort nodes by ID
@@ -529,11 +529,11 @@ StorageResult StorageEngine::pack_diag_archive(const std::string& diag_file_path
   if (!out.is_open()) {
     return {false, "Cannot create .diag archive: " + diag_file_path};
   }
-  const std::string manifest = "{\"type\": \"vector_diag\", \"version\": 1}\n";
+  const std::string manifest = "{\"type\": \"madi_diag\", \"version\": 1}\n";
   const std::string graph_yaml = serialize_yaml(root_graph, &lib_manager);
 
   // Write header and contents
-  out << "VECTOR_DIAG_BUNDLE_V1\n";
+  out << "MADI_DIAG_BUNDLE_V1\n";
   out << manifest.size() << "\n" << manifest;
   out << graph_yaml.size() << "\n" << graph_yaml;
   return {true, ""};
@@ -548,7 +548,7 @@ StorageResult StorageEngine::unpack_diag_archive(const std::string& diag_file_pa
   }
   std::string magic;
   std::getline(in, magic);
-  if (magic != "VECTOR_DIAG_BUNDLE_V1") {
+  if (magic != "MADI_DIAG_BUNDLE_V1") {
     return {false, "Invalid .diag file magic header: " + magic};
   }
 
@@ -567,4 +567,4 @@ StorageResult StorageEngine::unpack_diag_archive(const std::string& diag_file_pa
   return deserialize_yaml(yaml_data, out_root_graph, &out_lib_manager);
 }
 
-}  // namespace vector::io
+}  // namespace madi::io

@@ -1,8 +1,8 @@
-// VECTOR - Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing
-// Copyright (C) 2026 VECTOR Contributors
+// Madí - Model, Align & Diagram Interconnects
+// Copyright (C) 2026 Madí Contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "vector/io/DrawioParser.hpp"
+#include "madi/io/DrawioParser.hpp"
 
 #include <algorithm>
 #include <array>
@@ -13,7 +13,7 @@
 #include <unordered_map>
 #include <zlib.h>
 
-namespace vector::io {
+namespace madi::io {
 
 namespace {
 
@@ -137,7 +137,7 @@ std::string base64_encode(const unsigned char* in, size_t len) {
 std::string DrawioParser::export_xml(const core::GraphModel& graph,
                                      const std::string& diagram_name) {
   std::ostringstream ss;
-  ss << "<mxfile host=\"app.diagrams.net\" agent=\"VECTOR Diagram Engine\" version=\"21.0.0\" type=\"device\">\n";
+  ss << "<mxfile host=\"app.diagrams.net\" agent=\"Madí Diagram Engine\" version=\"21.0.0\" type=\"device\">\n";
   ss << "  <diagram id=\"Page-1\" name=\"" << xml_escape(diagram_name.empty() ? "Page-1" : diagram_name) << "\">\n";
   ss << "    <mxGraphModel dx=\"1200\" dy=\"800\" grid=\"1\" gridSize=\"10\" guides=\"1\" tooltips=\"1\" connect=\"1\" arrows=\"1\" fold=\"1\" page=\"1\" pageScale=\"1\" pageWidth=\"1100\" pageHeight=\"850\" math=\"0\" shadow=\"0\">\n";
   ss << "      <root>\n";
@@ -535,4 +535,4 @@ DrawioParseResult DrawioParser::import_xml(std::string_view xml_data,
   return result;
 }
 
-} // namespace vector::io
+} // namespace madi::io

@@ -1,14 +1,14 @@
-// VECTOR - Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing
-// Copyright (C) 2026 VECTOR Contributors
+// Madí - Model, Align & Diagram Interconnects
+// Copyright (C) 2026 Madí Contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "vector/core/SymbolGenerator.hpp"
+#include "madi/core/SymbolGenerator.hpp"
 
 #include <cmath>
 #include <unordered_map>
 #include <unordered_set>
 
-namespace vector::core {
+namespace madi::core {
 
 Node SymbolGenerator::create_default_rectangle_symbol(
     const std::string& name,
@@ -226,4 +226,4 @@ void SymbolGenerator::auto_fit_dimensions(Node& symbol_node, const GraphModel& p
   symbol_node.bounds.height = needed_h;
 }
 
-} // namespace vector::core
+} // namespace madi::core

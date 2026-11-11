@@ -1,4 +1,4 @@
-# VECTOR Diagram Model - Deterministic YAML Format
+# Madí Diagram Model - Deterministic YAML Format
 # Example: Multi-tier Network Architecture with Orthogonal Routing
 schema_version: 1
 nodes:

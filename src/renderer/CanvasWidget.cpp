@@ -1,10 +1,10 @@
-// VECTOR - Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing
-// Copyright (C) 2026 VECTOR Contributors
+// Madí - Model, Align & Diagram Interconnects
+// Copyright (C) 2026 Madí Contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "vector/renderer/CanvasWidget.hpp"
+#include "madi/renderer/CanvasWidget.hpp"
 
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
 #include <QApplication>
 #include <QContextMenuEvent>
 #include <QDrag>
@@ -25,12 +25,12 @@
 #include <limits>
 #include <unordered_set>
 
-#include "vector/io/DrawioParser.hpp"
-#include "vector/io/StorageEngine.hpp"
-#include "vector/core/SymbolGenerator.hpp"
+#include "madi/io/DrawioParser.hpp"
+#include "madi/io/StorageEngine.hpp"
+#include "madi/core/SymbolGenerator.hpp"
 #include <iostream>
 
-namespace vector::renderer {
+namespace madi::renderer {
 
 namespace {
 inline QColor argb_to_qcolor(uint32_t c) {
@@ -44,7 +44,7 @@ inline std::string generate_subsystem_uuid() {
 }
 }
 
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
 CanvasWidget::CanvasWidget(QWidget* parent)
     : QOpenGLWidget(parent),
       renderer_(std::make_unique<CanvasRenderer>()) {
@@ -597,7 +597,7 @@ bool CanvasWidget::remove_control_point(core::NodeId node_id, int point_index) {
 void CanvasWidget::set_segment_moving_enabled(bool enabled) {
   if (segment_moving_enabled_ == enabled) return;
   segment_moving_enabled_ = enabled;
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   emit segment_moving_toggled(enabled);
 #endif
   update();
@@ -605,7 +605,7 @@ void CanvasWidget::set_segment_moving_enabled(bool enabled) {
 
 bool CanvasWidget::is_segment_moving_active() const noexcept {
   if (segment_moving_enabled_) return true;
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   return (QApplication::keyboardModifiers() & Qt::ShiftModifier) != 0;
 #else
   return false;
@@ -715,7 +715,7 @@ void CanvasWidget::select_edge(core::EdgeId id, bool clear_previous) {
 void CanvasWidget::set_wire_crossing_style(WireCrossingStyle style) {
   if (wire_crossing_style_ != style) {
     wire_crossing_style_ = style;
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
     emit wire_crossing_style_changed(style);
 #endif
     update();
@@ -837,7 +837,7 @@ core::EdgeId CanvasWidget::auto_route_arrow(core::NodeId src_node, core::PortId 
 
   select_edge(eid, true);
   update();
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   emit status_message_requested(QString("Auto-routed arrow: %1 -> %2")
       .arg(QString::fromStdString(s_node->name))
       .arg(QString::fromStdString(d_node->name)));
@@ -860,7 +860,7 @@ bool CanvasWidget::add_arrow_branch(core::EdgeId edge_id, core::NodeId target_no
   graph_model_->update_edge_route(*edge);
 
   update();
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   emit status_message_requested(QString("Added multipoint branch on arrow Net %1 to node %2")
       .arg(edge_id)
       .arg(QString::fromStdString(d_node->name)));
@@ -870,7 +870,7 @@ bool CanvasWidget::add_arrow_branch(core::EdgeId edge_id, core::NodeId target_no
 
 bool CanvasWidget::add_arrow_branch_to_selected(core::NodeId target_node, core::PortId target_port) {
   if (selected_edge_ == core::InvalidEdgeId) {
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
     emit status_message_requested("No arrow/wire selected to add branch to");
 #endif
     return false;
@@ -884,7 +884,7 @@ void CanvasWidget::set_edge_branches_aligned(core::EdgeId edge_id, bool aligned)
     edge->set_branches_aligned(aligned);
     graph_model_->update_edge_route(*edge);
     update();
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
     emit edge_branches_aligned_changed(edge_id, aligned);
     emit status_message_requested(QString("Multipoint arrow Net %1 lines: %2")
         .arg(edge_id)
@@ -1612,7 +1612,7 @@ bool CanvasWidget::bring_to_front_selected() {
     }
   }
 
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   update();
   emit diagram_modified();
   emit status_message_requested("Brought selected shape(s) to front.");
@@ -1674,7 +1674,7 @@ bool CanvasWidget::send_to_back_selected() {
     }
   }
 
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   update();
   emit diagram_modified();
   emit status_message_requested("Sent selected shape(s) to back.");
@@ -1733,7 +1733,7 @@ bool CanvasWidget::bring_forward_selected() {
     }
   }
 
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   update();
   emit diagram_modified();
   emit status_message_requested("Brought selected shape(s) forward.");
@@ -1790,7 +1790,7 @@ bool CanvasWidget::send_backward_selected() {
     }
   }
 
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   update();
   emit diagram_modified();
   emit status_message_requested("Sent selected shape(s) backward.");
@@ -1814,7 +1814,7 @@ void CanvasWidget::rotate_selected(double delta_deg) {
       old_rots.emplace_back(id, old_deg);
       new_rots.emplace_back(id, new_deg);
       n->rotation_deg = new_deg;
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
       emit node_rotation_changed(id, new_deg);
 #endif
     }
@@ -1827,7 +1827,7 @@ void CanvasWidget::rotate_selected(double delta_deg) {
 
   graph_model_->update_all_edge_routes();
   refresh_spatial_index();
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   emit diagram_modified();
   update();
 #endif
@@ -1850,7 +1850,7 @@ void CanvasWidget::set_selected_nodes_rotation(double absolute_deg) {
         old_rots.emplace_back(id, n->rotation_deg);
         new_rots.emplace_back(id, target_deg);
         n->rotation_deg = target_deg;
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
         emit node_rotation_changed(id, target_deg);
 #endif
       }
@@ -1864,7 +1864,7 @@ void CanvasWidget::set_selected_nodes_rotation(double absolute_deg) {
 
   graph_model_->update_all_edge_routes();
   refresh_spatial_index();
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   emit diagram_modified();
   update();
 #endif
@@ -1890,7 +1890,7 @@ void CanvasWidget::set_node_rotation(core::NodeId id, double absolute_deg) {
 
   graph_model_->update_all_edge_routes();
   refresh_spatial_index();
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   emit node_rotation_changed(id, target_deg);
   emit diagram_modified();
   update();
@@ -1912,7 +1912,7 @@ void CanvasWidget::set_selected_nodes_fill_color(const std::string& color) {
       n->properties["fill_color"] = color;
     }
   }
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   update();
   emit diagram_modified();
 #endif
@@ -1925,7 +1925,7 @@ void CanvasWidget::set_selected_nodes_stroke_color(const std::string& color) {
       n->properties["stroke_color"] = color;
     }
   }
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   update();
   emit diagram_modified();
 #endif
@@ -1938,7 +1938,7 @@ void CanvasWidget::set_selected_nodes_text_color(const std::string& color) {
       n->properties["text_color"] = color;
     }
   }
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   update();
   emit diagram_modified();
 #endif
@@ -1954,7 +1954,7 @@ void CanvasWidget::set_selected_nodes_stroke_width(double width) {
       n->properties["stroke_width"] = width_str;
     }
   }
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   update();
   emit diagram_modified();
 #endif
@@ -1967,7 +1967,7 @@ void CanvasWidget::set_selected_nodes_font_family(const std::string& family) {
       n->properties["font_family"] = family;
     }
   }
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   update();
   emit diagram_modified();
 #endif
@@ -1980,7 +1980,7 @@ void CanvasWidget::set_selected_nodes_font_size(int size) {
       n->properties["font_size"] = std::to_string(size);
     }
   }
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   update();
   emit diagram_modified();
 #endif
@@ -1993,7 +1993,7 @@ void CanvasWidget::set_selected_nodes_font_bold(bool bold) {
       n->properties["font_bold"] = bold ? "true" : "false";
     }
   }
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   update();
   emit diagram_modified();
 #endif
@@ -2006,7 +2006,7 @@ void CanvasWidget::set_selected_nodes_font_italic(bool italic) {
       n->properties["font_italic"] = italic ? "true" : "false";
     }
   }
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   update();
   emit diagram_modified();
 #endif
@@ -2019,7 +2019,7 @@ void CanvasWidget::set_selected_nodes_font_underline(bool underline) {
       n->properties["font_underline"] = underline ? "true" : "false";
     }
   }
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   update();
   emit diagram_modified();
 #endif
@@ -2040,7 +2040,7 @@ void CanvasWidget::reset_selected_nodes_style() {
       n->properties.erase("font_underline");
     }
   }
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   update();
   emit diagram_modified();
 #endif
@@ -2207,7 +2207,7 @@ bool CanvasWidget::drill_down_node(core::NodeId nid) {
     return false;
   }
 
-  std::string scope_uri = is_file ? ("file://" + file_path) : ("vector://subsystem/" + node->name);
+  std::string scope_uri = is_file ? ("file://" + file_path) : ("madi://subsystem/" + node->name);
   hierarchy_context_->push_scope(nid, scope_uri, node->name, target_graph);
   scope_node_stack_.push_back(nid);
 
@@ -4275,13 +4275,13 @@ void CanvasWidget::enterEvent(QEnterEvent* event) {
 
 void CanvasWidget::dragEnterEvent(QDragEnterEvent* event) {
   if (event->mimeData()->hasFormat("application/x-madi-stencil") ||
-      event->mimeData()->hasFormat("application/x-vector-stencil") ||
+      event->mimeData()->hasFormat("application/x-madi-stencil") ||
       event->mimeData()->hasUrls()) {
     if (event->mimeData()->hasFormat("application/x-madi-stencil") ||
-        event->mimeData()->hasFormat("application/x-vector-stencil")) {
+        event->mimeData()->hasFormat("application/x-madi-stencil")) {
       const QByteArray bytes = event->mimeData()->hasFormat("application/x-madi-stencil")
           ? event->mimeData()->data("application/x-madi-stencil")
-          : event->mimeData()->data("application/x-vector-stencil");
+          : event->mimeData()->data("application/x-madi-stencil");
       deserialize_placement_template(bytes, drag_template_);
       is_drag_active_ = true;
 
@@ -4306,7 +4306,7 @@ void CanvasWidget::dragEnterEvent(QDragEnterEvent* event) {
 
 void CanvasWidget::dragMoveEvent(QDragMoveEvent* event) {
   if (event->mimeData()->hasFormat("application/x-madi-stencil") ||
-      event->mimeData()->hasFormat("application/x-vector-stencil")) {
+      event->mimeData()->hasFormat("application/x-madi-stencil")) {
     const QPointF pos = event->position();
     last_mouse_screen_ = {pos.x(), pos.y()};
     const core::Vec2d current_world = screen_to_world(last_mouse_screen_);
@@ -4341,10 +4341,10 @@ void CanvasWidget::dragLeaveEvent(QDragLeaveEvent* event) {
 
 void CanvasWidget::dropEvent(QDropEvent* event) {
   if (event->mimeData()->hasFormat("application/x-madi-stencil") ||
-      event->mimeData()->hasFormat("application/x-vector-stencil")) {
+      event->mimeData()->hasFormat("application/x-madi-stencil")) {
     const QByteArray bytes = event->mimeData()->hasFormat("application/x-madi-stencil")
         ? event->mimeData()->data("application/x-madi-stencil")
-        : event->mimeData()->data("application/x-vector-stencil");
+        : event->mimeData()->data("application/x-madi-stencil");
     ShapePlacementTemplate tmpl = drag_template_;
     deserialize_placement_template(bytes, tmpl);
 
@@ -4383,7 +4383,7 @@ void CanvasWidget::dropEvent(QDropEvent* event) {
 }
 
 void CanvasWidget::start_canvas_drag_to_palette() {
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   if (!graph_model_ || selected_nodes_.empty()) return;
 
   // Revert any live node displacement from DraggingNodes back to initial bounds
@@ -4454,8 +4454,8 @@ void CanvasWidget::start_canvas_drag_to_palette() {
   auto* mime = new QMimeData();
   mime->setData("application/x-madi-stencil", item_data);
   mime->setData("application/x-madi-diagram-shape", item_data);
-  mime->setData("application/x-vector-stencil", item_data);
-  mime->setData("application/x-vector-diagram-shape", item_data);
+  mime->setData("application/x-madi-stencil", item_data);
+  mime->setData("application/x-madi-diagram-shape", item_data);
   mime->setText(QString::fromStdString(tmpl.name));
 
   auto* drag = new QDrag(this);
@@ -4745,7 +4745,7 @@ void CanvasWidget::cancel_placement() {
   instantiation_drag_active_ = false;
   instantiation_two_click_active_ = false;
   set_tool_mode(ToolMode::Select);
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   update();
 #endif
 }
@@ -4811,7 +4811,7 @@ bool CanvasWidget::finish_polygon_creation() {
   in_progress_polygon_points_.clear();
   set_tool_mode(ToolMode::Select);
   refresh_spatial_index();
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   update();
   emit diagram_modified();
   emit status_message_requested(QString("Created %1 with %2 vertices.")
@@ -4823,7 +4823,7 @@ bool CanvasWidget::finish_polygon_creation() {
 
 void CanvasWidget::cancel_polygon_creation() {
   in_progress_polygon_points_.clear();
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   update();
 #endif
 }
@@ -4863,7 +4863,7 @@ void CanvasWidget::cancel_multipoint_arrow() {
   in_progress_arrow_points_.clear();
   arrow_source_node_ = core::InvalidNodeId;
   arrow_source_port_ = core::InvalidPortId;
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   update();
 #endif
 }
@@ -4906,7 +4906,7 @@ core::EdgeId CanvasWidget::add_multipoint_arrow(
 
   select_edge(eid, true);
   refresh_spatial_index();
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   update();
   emit diagram_modified();
   emit status_message_requested(QString("Created Multi-Point Arrow with %1 waypoints").arg(waypoints.size()));
@@ -4918,7 +4918,7 @@ void CanvasWidget::undo() {
   if (command_history_ && command_history_->can_undo()) {
     command_history_->undo();
     refresh_spatial_index();
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
     update();
     emit diagram_modified();
     emit status_message_requested("Undo performed (Mouse Button 8)");
@@ -4930,7 +4930,7 @@ void CanvasWidget::redo() {
   if (command_history_ && command_history_->can_redo()) {
     command_history_->redo();
     refresh_spatial_index();
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
     update();
     emit diagram_modified();
     emit status_message_requested("Redo performed (Mouse Button 9)");
@@ -4995,12 +4995,12 @@ void CanvasWidget::set_zoom_level(double z) {
 
   update_lod_state();
   update();
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   emit zoom_level_changed(zoom_level_);
 #endif
 }
 
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
 void CanvasWidget::start_inline_text_edit(core::NodeId id) {
   if (!graph_model_ || !inline_editor_) return;
   auto* node = graph_model_->find_node(id);
@@ -5650,7 +5650,7 @@ void CanvasWidget::update_lod_state() {
   if (graph_model_ && graph_model_->node_count() > 10000) {
     current_lod_ = LODLevel::Proxy;
     is_rapid_interacting_ = true;
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
     lod_restore_timer_.start(150);
 #endif
   } else {
@@ -5682,7 +5682,7 @@ void CanvasWidget::render_canvas() {
     renderer_->draw_grid(*grid_manager_, ctx, diagram_style_.render_style);
   }
 
-#ifndef VECTOR_ENABLE_QT
+#ifndef MADI_ENABLE_QT
   if (graph_model_) {
     graph_model_->update_all_edge_routes();
     RenderStyle default_style = diagram_style_.render_style;
@@ -5751,7 +5751,7 @@ void CanvasWidget::render_canvas() {
 
   renderer_->end_frame();
 
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
   if (renderer_->backend_type() == RendererBackend::SoftwareRaster) {
     QPainter painter(this);
     if (!painter.isActive()) return;
@@ -7154,4 +7154,4 @@ void CanvasWidget::set_page_orientation(PageOrientation orientation) {
   update();
 }
 
-} // namespace vector::renderer
+} // namespace madi::renderer

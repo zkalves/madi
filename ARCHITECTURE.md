@@ -15,7 +15,7 @@
 **Madí** (/mah-DEE/) is an open-source, high-performance 2D diagramming and schematic engine engineered to scale smoothly to massive networks (10,000 to 100,000+ nodes and edges). It honors the 1946 Buenos Aires **Arte Madí** movement through its freeform polygonal canvas (*marco recortado*), linear grids, and articulated hierarchical structures. It provides native support for hierarchical blocks, sub-sheet instantiations, asynchronous obstacle-avoiding routing, dual-backend hardware/software rendering, and transactional editing.
 
 ### Key Tenets
-1. **Zero-Coupling Core Domain**: The core domain layer (`madi::core` / `vector::core`) has zero dependencies outside the C++20 standard library. Core geometry, topology, spatial indexing, and transactional history are decoupled from Qt, Skia, and OS-specific windowing systems.
+1. **Zero-Coupling Core Domain**: The core domain layer (`madi::core` / `madi::core`) has zero dependencies outside the C++20 standard library. Core geometry, topology, spatial indexing, and transactional history are decoupled from Qt, Skia, and OS-specific windowing systems.
 2. **Double-Precision World Space**: All canvas coordinates are stored as 64-bit IEEE 754 `double` values to ensure sub-millimeter precision across extreme zoom ranges ($10^{-5}$ to $10^{5}$) without spatial jitter or floating-point rounding degradation.
 3. **Viewport Isolation & Spatial Culling**: Complex sub-diagrams and child graphs are encapsulated within opaque bounding polygons in parent viewports. Only visible elements within the active frustum are processed and rasterized.
 4. **Asynchronous Non-Blocking Workers**: CPU-intensive algorithms (dynamic obstacle avoidance via `libavoid`, graph auto-layout via OGDF, spatial SQLite caching) run on detached background worker threads (`std::jthread`) to guarantee an uninterrupted 60/144 FPS UI experience.
@@ -67,7 +67,7 @@ graph TD
 
 ## 3. Threading Topology & Concurrency Model
 
-VECTOR uses a multi-threaded cooperative architecture to keep the UI thread responsive during multi-node edits and routing recomputations.
+Madí uses a multi-threaded cooperative architecture to keep the UI thread responsive during multi-node edits and routing recomputations.
 
 ```mermaid
 sequenceDiagram
@@ -93,7 +93,7 @@ sequenceDiagram
 ```
 
 ### Thread Allocations
-- **Main / GUI Thread (`vector-gui`)**:
+- **Main / GUI Thread (`madi-gui`)**:
   - Handles Qt event loop, Wayland/X11 window messages, input events (mouse, keyboard, touch gestures).
   - Maintains `CommandHistory` and dispatches UI repaint commands.
 - **Render Worker / GPU Context**:
@@ -110,7 +110,7 @@ sequenceDiagram
 
 ## 4. Hierarchical Block & Library Architecture
 
-VECTOR treats hierarchical diagrams as first-class citizens. Diagrams are composed of reusable definitions and lightweight instances with prototype inheritance.
+Madí treats hierarchical diagrams as first-class citizens. Diagrams are composed of reusable definitions and lightweight instances with prototype inheritance.
 
 ```mermaid
 classDiagram
@@ -175,7 +175,7 @@ classDiagram
 
 ### 4.1 Block Definitions vs. Block Instances
 - **`BlockDefinition`**:
-  - An immutable or upstream-managed sub-graph template identified by URI (e.g. `vector://stdlib/alu_32bit.diag` or `file:///projects/subsys/rf_front.yaml`).
+  - An immutable or upstream-managed sub-graph template identified by URI (e.g. `madi://stdlib/alu_32bit.diag` or `file:///projects/subsys/rf_front.yaml`).
   - Owns its private `GraphModel` in local coordinate space (with origin `(0, 0)`).
   - Exposes an explicit set of boundary `InterfacePort` definitions that bind external pins to specific internal nodes and ports.
 - **`BlockInstance`**:
@@ -227,7 +227,7 @@ flowchart TD
   - Skia utilizes hardware shaders for anti-aliased path stroking, drop shadows, and linear/radial gradients.
 - **Software Raster Fallback**:
   - Creates an `SkSurface::MakeRasterN32Premul` wrapping an allocated pixel buffer.
-  - Enables flawless headless rendering in CLI batch pipelines (`vector-cli`) and resilient execution on Linux systems lacking OpenGL/Vulkan acceleration.
+  - Enables flawless headless rendering in CLI batch pipelines (`madi`) and resilient execution on Linux systems lacking OpenGL/Vulkan acceleration.
   - Blitted onto the viewport via `QPainter::drawImage`.
 
 ### Level-of-Detail (LOD) Policies
@@ -263,7 +263,7 @@ The `SnapResolver` processes cursor positions against active snap flags:
 ### 6.3 Dynamic Obstacle Avoidance Routing
 - **Obstacle Representation**: Each node and block instance registers an expanded obstacle bounding box ($\text{Rect} + \text{Padding}$).
 - **`libavoid` Integration**:
-  - VECTOR delegates connector routing graphs to `libavoid` (from the Adaptagrams project), specifying port direction vectors (e.g. North, East, South, West).
+  - Madí delegates connector routing graphs to `libavoid` (from the Adaptagrams project), specifying port direction vectors (e.g. North, East, South, West).
   - `libavoid` constructs a visibility graph around rectangular and polygonal obstacles, generating optimal orthogonal paths with minimal crossings and corners.
 - **Reference Router Fallback**:
   - A zero-dependency orthogonal A* search router operates over a dynamic spatial tile grid when external routing libraries are unlinked.
@@ -276,7 +276,7 @@ The `SnapResolver` processes cursor positions against active snap flags:
 - **Zero-Dependency Flat BVH / Linear R-Tree**:
   - Built-in C++20 spatial index supporting bounding box insertion, deletion, fast bounding-box queries, and nearest-neighbor hit testing.
 - **Boost.Geometry Adapter**:
-  - When Boost is enabled (`VECTOR_ENABLE_BOOST`), an adapter binds to `boost::geometry::index::rtree<Item, boost::geometry::index::rstar<16>>`.
+  - When Boost is enabled (`MADI_ENABLE_BOOST`), an adapter binds to `boost::geometry::index::rtree<Item, boost::geometry::index::rstar<16>>`.
 - **Query Types**:
   - `query_frustum(Rect2d visibleFrustum)`: Rapidly filters 100,000 nodes down to the visible set in $\mathcal{O}(\log N + K)$ time.
   - `query_point(Vec2d point)`: Performs precise top-down z-ordered hit testing.
@@ -394,4 +394,4 @@ classDiagram
 
 ## 10. Summary
 
-VECTOR delivers a clean, modern C++20 architecture designed for high scalability, responsive interaction, and modularity. By separating the zero-dependency core domain from rendering, windowing, and routing backends, VECTOR establishes a durable foundation for enterprise-grade diagramming on modern Linux workstations.
+Madí delivers a clean, modern C++20 architecture designed for high scalability, responsive interaction, and modularity. By separating the zero-dependency core domain from rendering, windowing, and routing backends, Madí establishes a durable foundation for enterprise-grade diagramming on modern Linux workstations.

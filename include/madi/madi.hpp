@@ -6,24 +6,22 @@
 #ifndef MADI_MADI_HPP
 #define MADI_MADI_HPP
 
-#include "vector/core/Geometry.hpp"
-#include "vector/core/GraphModel.hpp"
-#include "vector/core/HierarchicalBlock.hpp"
-#include "vector/core/SpatialIndex.hpp"
-#include "vector/core/Command.hpp"
-#include "vector/core/CommandHistory.hpp"
-#include "vector/core/ParametricShape.hpp"
-#include "vector/core/SymbolGenerator.hpp"
-#include "vector/grid/GridManager.hpp"
-#include "vector/routing/OrthogonalRouter.hpp"
-#include "vector/routing/RouterWorker.hpp"
-#include "vector/routing/SnappingEngine.hpp"
-#include "vector/io/StorageEngine.hpp"
-#include "vector/io/DrawioParser.hpp"
+#include "madi/core/Geometry.hpp"
+#include "madi/core/GraphModel.hpp"
+#include "madi/core/HierarchicalBlock.hpp"
+#include "madi/core/SpatialIndex.hpp"
+#include "madi/core/Command.hpp"
+#include "madi/core/CommandHistory.hpp"
+#include "madi/core/ParametricShape.hpp"
+#include "madi/core/SymbolGenerator.hpp"
+#include "madi/grid/GridManager.hpp"
+#include "madi/routing/OrthogonalRouter.hpp"
+#include "madi/routing/RouterWorker.hpp"
+#include "madi/routing/SnappingEngine.hpp"
+#include "madi/io/StorageEngine.hpp"
+#include "madi/io/DrawioParser.hpp"
 
 namespace madi {
-  // Alias vector namespace components
-  using namespace vector;
 }
 
 #endif // MADI_MADI_HPP

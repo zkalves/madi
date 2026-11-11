@@ -1,1 +1,1 @@
-namespace vector::routing {}
+namespace madi::routing {}

@@ -1,24 +1,24 @@
-// VECTOR - Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing
-// Copyright (C) 2026 VECTOR Contributors
+// Madí - Model, Align & Diagram Interconnects
+// Copyright (C) 2026 Madí Contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "vector/core/Command.hpp"
-#include "vector/core/Geometry.hpp"
-#include "vector/core/GraphModel.hpp"
-#include "vector/core/HierarchicalBlock.hpp"
-#include "vector/core/SpatialIndex.hpp"
+#include "madi/core/Command.hpp"
+#include "madi/core/Geometry.hpp"
+#include "madi/core/GraphModel.hpp"
+#include "madi/core/HierarchicalBlock.hpp"
+#include "madi/core/SpatialIndex.hpp"
 
 #include <cassert>
 #include <iostream>
 
-using namespace vector;
+using namespace madi;
 
 int main() {
   std::cout << "===> Running CoreSmokeTest...\n";
 
   // 1. Graph Model & Hierarchy Definitions
   core::BlockLibraryManager lib_manager;
-  core::BlockDefinition alu_def("vector://stdlib/alu_32bit", "ALU 32-bit");
+  core::BlockDefinition alu_def("madi://stdlib/alu_32bit", "ALU 32-bit");
   alu_def.set_default_size({160.0, 100.0});
   alu_def.set_default_property("architecture", "RISC-V");
 

@@ -20,7 +20,7 @@
     </ul>
   </description>
   <launchable type="desktop-id">madi.desktop</launchable>
-  <url type="homepage">https://github.com/vector/vector</url>
+  <url type="homepage">https://github.com/madi/madi</url>
   <provides>
     <binary>madi-gui</binary>
     <binary>madi</binary>

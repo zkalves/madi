@@ -27,7 +27,7 @@ The project is named in homage to **Arte Madí**, the 1946 Buenos Aires geometri
 
 ## Key Capabilities
 
-- **Zero-Dependency Core Domain**: Pure ISO C++20 domain layer (`madi::core` / `vector::core`) with decoupled transactional undo/redo, R-Tree / BVH spatial indexing, and topological graph models.
+- **Zero-Dependency Core Domain**: Pure ISO C++20 domain layer (`madi::core` / `madi::core`) with decoupled transactional undo/redo, R-Tree / BVH spatial indexing, and topological graph models.
 - **Hierarchical Subsystems & Instantiation**: Built-in and file-linked subsystems (`.madi`), boundary port routing, prototype property overrides, and breadcrumb drill-down.
 - **Parametric Shapes & Multi-Point Connectors**: Freeform polygons with interactive vertex handles, segmented arrows, and line physics.
 - **Autonomous Obstacle Avoidance**: Background `RouterWorker` (`std::jthread`) with dynamic Manhattan routing, bridge crossings, and selectable snapping engine.

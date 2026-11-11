@@ -1,10 +1,10 @@
-// VECTOR - Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing
-// Copyright (C) 2026 VECTOR Contributors
+// Madí - Model, Align & Diagram Interconnects
+// Copyright (C) 2026 Madí Contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "vector/gui/ThemeManager.hpp"
+#include "madi/gui/ThemeManager.hpp"
 
-#ifdef VECTOR_ENABLE_QT
+#ifdef MADI_ENABLE_QT
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -13,7 +13,7 @@
 #include <QPalette>
 #include <QStandardPaths>
 
-namespace vector::gui {
+namespace madi::gui {
 
 QString UITheme::to_qss() const {
   const QString win_bg = get_color("window_bg", "#1E1E2E");
@@ -486,11 +486,7 @@ void ThemeManager::scan_themes(const QString& custom_search_path) {
               << QCoreApplication::applicationDirPath() + "/../share/madi/themes"
               << QCoreApplication::applicationDirPath() + "/../share/madi/res/themes"
               << "/usr/local/share/madi/themes"
-              << "/usr/share/madi/themes"
-              << QCoreApplication::applicationDirPath() + "/../share/vector/themes"
-              << QCoreApplication::applicationDirPath() + "/../share/vector/res/themes"
-              << "/usr/local/share/vector/themes"
-              << "/usr/share/vector/themes";
+              << "/usr/share/madi/themes";
 
   for (const QString& base_dir : search_dirs) {
     QDir dir(base_dir);
@@ -646,6 +642,6 @@ bool ThemeManager::set_active_diagram_theme(const std::string& id) {
   return true;
 }
 
-}  // namespace vector::gui
+}  // namespace madi::gui
 
-#endif  // VECTOR_ENABLE_QT
+#endif // MADI_ENABLE_QT

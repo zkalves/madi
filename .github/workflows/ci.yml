@@ -1,4 +1,4 @@
-name: VECTOR CI & Packaging
+name: Madí CI & Packaging
 
 on:
   push:
@@ -45,8 +45,8 @@ jobs:
 
       - name: Test Headless GUI Launch
         run: |
-          QT_QPA_PLATFORM=offscreen ./build/vector-gui --self-test || true
-          ./build/vector-cli --help || true
+          QT_QPA_PLATFORM=offscreen ./build/madi-gui --self-test || true
+          ./build/madi --help || true
 
   # ============================================================================
   # 2. Native Linux Packages: DEB, RPM, and Tarball (CPack)
@@ -81,18 +81,18 @@ jobs:
 
       - name: Test Install DEB Package
         run: |
-          sudo dpkg -i build/vector-*.deb
-          vector-cli --help || true
-          QT_QPA_PLATFORM=offscreen vector-gui --help || true
+          sudo dpkg -i build/madi-*.deb
+          madi --help || true
+          QT_QPA_PLATFORM=offscreen madi-gui --help || true
 
       - name: Upload DEB & RPM Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux-native-packages
           path: |
-            build/vector-*.deb
-            build/vector-*.rpm
-            build/vector-*.tar.gz
+            build/madi-*.deb
+            build/madi-*.rpm
+            build/madi-*.tar.gz
 
   # ============================================================================
   # 3. Standalone AppImage Bundle
@@ -128,14 +128,14 @@ jobs:
 
       - name: Verify AppImage Execution (Headless)
         run: |
-          chmod +x dist/VECTOR*.AppImage || true
-          ./dist/VECTOR*.AppImage --appimage-extract-and-run --help || true
+          chmod +x dist/*.AppImage || true
+          ./dist/*.AppImage --appimage-extract-and-run --help || true
 
       - name: Upload AppImage Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: vector-appimage
-          path: dist/VECTOR*.AppImage
+          name: madi-appimage
+          path: dist/*.AppImage
 
   # ============================================================================
   # 4. Containers: Docker & Podman OCI Build & Test
@@ -158,20 +158,20 @@ jobs:
 
       - name: Build OCI Image with Docker
         run: |
-          docker build -t vector:docker-test -f packaging/docker/Dockerfile .
+          docker build -t madi:docker-test -f packaging/docker/Dockerfile .
 
       - name: Test Docker Container Execution
         run: |
-          docker run --rm vector:docker-test vector-cli --help || true
-          docker run --rm -e QT_QPA_PLATFORM=offscreen vector:docker-test vector-gui --help || true
+          docker run --rm madi:docker-test madi --help || true
+          docker run --rm -e QT_QPA_PLATFORM=offscreen madi:docker-test madi-gui --help || true
 
       - name: Build OCI Image with Podman
         run: |
-          podman build -t vector:podman-test -f packaging/docker/Dockerfile .
+          podman build -t madi:podman-test -f packaging/docker/Dockerfile .
 
       - name: Test Podman Container Execution
         run: |
-          podman run --rm vector:podman-test vector-cli --help || true
+          podman run --rm madi:podman-test madi --help || true
 
   # ============================================================================
   # 5. MS Windows Build & Packaging (MSVC, windeployqt, NSIS & ZIP)
@@ -220,7 +220,7 @@ jobs:
             --no-compiler-runtime `
             --no-translations `
             --plugindir install_dir/bin `
-            install_dir/bin/vector-gui.exe
+            install_dir/bin/madi-gui.exe
 
       - name: Package with CPack (NSIS & ZIP)
         run: |
@@ -232,8 +232,8 @@ jobs:
         with:
           name: windows-packages
           path: |
-            build/vector-*.zip
-            build/vector-*.exe
+            build/madi-*.zip
+            build/madi-*.exe
 
   # ============================================================================
   # 6. Publish GitHub Release (on Tag Push: v*)
@@ -254,7 +254,7 @@ jobs:
         with:
           files: |
             artifacts/linux-native-packages/*
-            artifacts/vector-appimage/*
+            artifacts/madi-appimage/*
             artifacts/windows-packages/*
           draft: false
           prerelease: false

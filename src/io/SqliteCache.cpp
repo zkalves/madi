@@ -1,1 +1,1 @@
-namespace vector::io {}
+namespace madi::io {}

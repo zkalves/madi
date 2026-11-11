@@ -1,29 +1,29 @@
-// VECTOR - Viewport Engine for Concurrent Topology & Obstacle-avoiding Routing
-// Copyright (C) 2026 VECTOR Contributors
+// Madí - Model, Align & Diagram Interconnects
+// Copyright (C) 2026 Madí Contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "vector/core/Geometry.hpp"
-#include "vector/core/GraphModel.hpp"
-#include "vector/core/HierarchicalBlock.hpp"
-#include "vector/core/SpatialIndex.hpp"
-#include "vector/core/Command.hpp"
-#include "vector/grid/GridManager.hpp"
-#include "vector/routing/RouterWorker.hpp"
-#include "vector/io/DrawioParser.hpp"
-#include "vector/io/StorageEngine.hpp"
+#include "madi/core/Geometry.hpp"
+#include "madi/core/GraphModel.hpp"
+#include "madi/core/HierarchicalBlock.hpp"
+#include "madi/core/SpatialIndex.hpp"
+#include "madi/core/Command.hpp"
+#include "madi/grid/GridManager.hpp"
+#include "madi/routing/RouterWorker.hpp"
+#include "madi/io/DrawioParser.hpp"
+#include "madi/io/StorageEngine.hpp"
 
 #include <cassert>
 #include <cmath>
 #include <iostream>
 #include <string>
 
-using namespace vector;
+using namespace madi;
 
 void test_hierarchical_block_definition_and_instances() {
   std::cout << "[Test 1] Defining BlockDefinition with 2 internal nodes and 2 boundary interface ports...\n";
 
   core::BlockLibraryManager lib_manager;
-  core::BlockDefinition alu_def("vector://stdlib/alu_32bit", "ALU 32-bit");
+  core::BlockDefinition alu_def("madi://stdlib/alu_32bit", "ALU 32-bit");
   alu_def.set_default_size({160.0, 100.0});
   alu_def.set_default_property("architecture", "RISC-V");
   alu_def.set_default_property("bit_width", "32");
@@ -79,7 +79,7 @@ void test_hierarchical_block_definition_and_instances() {
   assert(alu_def.interface_ports().size() == 2);
   lib_manager.register_definition(std::move(alu_def));
 
-  const auto* registered_def = lib_manager.find_definition("vector://stdlib/alu_32bit");
+  const auto* registered_def = lib_manager.find_definition("madi://stdlib/alu_32bit");
   assert(registered_def != nullptr);
   std::cout << "  -> Definition registered with URI: " << registered_def->uri() << "\n";
 
@@ -94,7 +94,7 @@ void test_hierarchical_block_definition_and_instances() {
   inst1_node.shape = core::ShapeType::HierarchicalBlock;
   const core::NodeId inst1_id = top_graph.add_node(std::move(inst1_node));
 
-  core::BlockInstance inst1(inst1_id, "vector://stdlib/alu_32bit", core::ReferenceMode::Linked);
+  core::BlockInstance inst1(inst1_id, "madi://stdlib/alu_32bit", core::ReferenceMode::Linked);
   inst1.set_bounds({100.0, 200.0, 160.0, 100.0});
   inst1.set_property_override("instance_label", "Stage 1 Adder");
   inst1.set_property_override("clock_freq", "200MHz");
@@ -106,7 +106,7 @@ void test_hierarchical_block_definition_and_instances() {
   inst2_node.shape = core::ShapeType::HierarchicalBlock;
   const core::NodeId inst2_id = top_graph.add_node(std::move(inst2_node));
 
-  core::BlockInstance inst2(inst2_id, "vector://stdlib/alu_32bit", core::ReferenceMode::Linked);
+  core::BlockInstance inst2(inst2_id, "madi://stdlib/alu_32bit", core::ReferenceMode::Linked);
   inst2.set_bounds({400.0, 200.0, 160.0, 100.0});
   inst2.set_property_override("instance_label", "Stage 2 Multiplier");
 
@@ -272,7 +272,7 @@ void test_hierarchical_block_definition_and_instances() {
   assert(drawio_imported.node_count() == top_graph.node_count());
   std::cout << "  -> YAML serialization and Draw.io bidirectional XML import/export verified.\n";
 
-  std::cout << "\n>>> ALL VECTOR ARCHITECTURE SMOKE TESTS PASSED CLEANLY! <<<\n";
+  std::cout << "\n>>> ALL MADÍ ARCHITECTURE SMOKE TESTS PASSED CLEANLY! <<<\n";
 }
 
 int main() {

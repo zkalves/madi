@@ -53,7 +53,7 @@ LABEL org.opencontainers.image.title="Madí" \
       org.opencontainers.image.description="Model, Align & Diagram Interconnects — Homage to Arte Madí (1946)" \
       org.opencontainers.image.authors="Madí Contributors" \
       org.opencontainers.image.licenses="GPL-3.0-or-later" \
-      org.opencontainers.image.source="https://github.com/vector/vector"
+      org.opencontainers.image.source="https://github.com/madi/madi"
 
 ENV DEBIAN_FRONTEND=noninteractive \
     QT_QPA_PLATFORM=xcb \
