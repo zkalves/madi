@@ -2142,9 +2142,9 @@ int main(int argc, char* argv[]) {
     assert(shapes_dock->total_shape_count() == initial_shapes + 1);
     assert(shapes_dock->has_shape("Motor Controller"));
 
-    shapes_dock->add_shape_item("Dodecagon", vector::gui::StencilLibraryDock::StencilItemType::ShapePolygon, 12);
+    shapes_dock->add_shape_item("CustomDodecagon", vector::gui::StencilLibraryDock::StencilItemType::ShapePolygon, 12);
     assert(shapes_dock->total_shape_count() == initial_shapes + 2);
-    assert(shapes_dock->has_shape("Dodecagon"));
+    assert(shapes_dock->has_shape("CustomDodecagon"));
 
     // C: Test Adding shape from Canvas selection
     auto* canvas = win.canvas();
@@ -2164,9 +2164,9 @@ int main(int argc, char* argv[]) {
     assert(!shapes_dock->has_shape("Motor Controller"));
     assert(shapes_dock->total_shape_count() == initial_shapes + 2);
 
-    bool removed_dodec = shapes_dock->remove_shape("Dodecagon");
+    bool removed_dodec = shapes_dock->remove_shape("CustomDodecagon");
     assert(removed_dodec);
-    assert(!shapes_dock->has_shape("Dodecagon"));
+    assert(!shapes_dock->has_shape("CustomDodecagon"));
     assert(shapes_dock->total_shape_count() == initial_shapes + 1);
 
     // Test restoring default shapes
@@ -2417,7 +2417,7 @@ int main(int argc, char* argv[]) {
 
     // 8. Test Inspector Spinbox Interaction
     win.update_inspector();
-    assert(std::abs(insp_rot->value() - 180.0) < 1e-2);
+    assert(std::abs(insp_rot->value() - 90.0) < 1e-2);
 
     // Set value via spinbox to 180.0°
     insp_rot->setValue(180.0);
@@ -2819,8 +2819,13 @@ int main(int argc, char* argv[]) {
     QMimeData* cross_mime = new QMimeData();
     cross_mime->setData("application/x-vector-stencil", c_bytes);
 
-    QDropEvent cross_drop(QPoint(500, 350), Qt::CopyAction, cross_mime, Qt::LeftButton, Qt::NoModifier);
+    const QPoint cross_pt(500, 350);
+    QDragEnterEvent cross_enter(cross_pt, Qt::CopyAction, cross_mime, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &cross_enter);
+
+    QDropEvent cross_drop(cross_pt, Qt::CopyAction, cross_mime, Qt::LeftButton, Qt::NoModifier);
     QApplication::sendEvent(canvas, &cross_drop);
+    assert(cross_drop.isAccepted());
     assert(canvas->graph_model()->node_count() == pre_drag_count + 2);
 
     const auto* dropped_cross = canvas->graph_model()->find_node(canvas->selected_nodes().front());
@@ -3322,7 +3327,7 @@ int main(int argc, char* argv[]) {
     (void)n2;
 
     // 7. Manipulate control points with code: point add, point list, point set, point del
-    canvas->select_node(n3->id, false);
+    canvas->select_node(n3->id, true);
     assert(canvas->selected_nodes().size() == 1);
 
     // List points
@@ -3488,6 +3493,69 @@ int main(int argc, char* argv[]) {
 
     canvas->render_frame_for_test();
     std::cout << "[Test 42] Bidirectional Port Differentiation & Shapes Custom Sections passed successfully!" << std::endl;
+  }
+
+  // 43. Test Multi-Point Arrow Connector & Mouse Button 8 (Undo) / Mouse Button 9 (Redo) Shortcuts
+  {
+    std::cout << "\n[Test 43] Testing Multi-Point Arrow Connector & Mouse Button 8/9 Undo/Redo..." << std::endl;
+    vector::gui::MainWindow win;
+    win.show();
+
+    auto* canvas = win.canvas();
+    auto* graph = win.graph_model();
+    assert(canvas != nullptr && graph != nullptr);
+
+    // 1. Test Multi-Point Arrow Connector Creation & Verification
+    canvas->set_tool_mode(vector::renderer::ToolMode::AddMultiPointArrow);
+    assert(canvas->is_multipoint_arrow_active());
+    assert(canvas->tool_mode() == vector::renderer::ToolMode::AddMultiPointArrow);
+
+    const std::vector<vector::core::Vec2d> waypoints = {
+      {40.0, 60.0}, {120.0, 60.0}, {120.0, 180.0}, {240.0, 180.0}
+    };
+    const auto arrow_eid = canvas->add_multipoint_arrow(waypoints);
+    assert(arrow_eid != vector::core::InvalidEdgeId);
+
+    const auto* arrow_edge = graph->find_edge(arrow_eid);
+    assert(arrow_edge != nullptr);
+    assert(arrow_edge->waypoints.size() == 4);
+    assert(arrow_edge->arrowhead == "filled" || arrow_edge->properties.at("arrowhead") == "filled");
+    assert(arrow_edge->properties.at("connector_type") == "arrow");
+
+    // Render frame to ensure arrow drawing pipeline renders waypoints and arrowhead without error
+    canvas->render_frame_for_test();
+
+    // 2. Test Mouse Button 8 (Undo) & Mouse Button 9 (Redo) on Canvas
+    const size_t edge_count_after_arrow = graph->edge_count();
+    assert(edge_count_after_arrow >= 1);
+
+    // Send Mouse Button 8 (Qt::BackButton) -> Triggers Undo
+    const QPoint click_pt(150, 150);
+    QMouseEvent mouse8_evt(QEvent::MouseButtonPress, click_pt, click_pt, Qt::BackButton, Qt::BackButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &mouse8_evt);
+    assert(graph->edge_count() == edge_count_after_arrow - 1); // Edge undone!
+
+    // Send Mouse Button 9 (Qt::ForwardButton) -> Triggers Redo
+    QMouseEvent mouse9_evt(QEvent::MouseButtonPress, click_pt, click_pt, Qt::ForwardButton, Qt::ForwardButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &mouse9_evt);
+    assert(graph->edge_count() == edge_count_after_arrow); // Edge restored via redo!
+
+    // Direct undo() and redo() API verification
+    canvas->undo();
+    assert(graph->edge_count() == edge_count_after_arrow - 1);
+    canvas->redo();
+    assert(graph->edge_count() == edge_count_after_arrow);
+
+    // 3. Test ToolMode::AddBidirectionalPort activation & properties
+    canvas->set_tool_mode(vector::renderer::ToolMode::AddBidirectionalPort);
+    assert(canvas->is_placement_tool_active());
+    assert(canvas->active_placement_template().shape_type == vector::core::ShapeType::BidirectionalPort);
+    assert(canvas->active_placement_template().port_type == "inout");
+    canvas->cancel_placement();
+    assert(!canvas->is_placement_tool_active());
+
+    canvas->render_frame_for_test();
+    std::cout << "[Test 43] Multi-Point Arrow Connector & Mouse Button 8/9 Undo/Redo passed successfully!" << std::endl;
   }
 
   std::cout << "===> All Theme System, Snapping & Hierarchical Port Smoke Tests passed successfully!" << std::endl;

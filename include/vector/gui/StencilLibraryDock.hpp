@@ -380,7 +380,7 @@ public:
       for (int j = 0; j < cat->childCount(); ++j) {
         auto* child = cat->child(j);
         if (child->text(0).contains(name, Qt::CaseInsensitive)) {
-          if (is_item_builtin(child)) return false; // Built-in shapes protected!
+          if (is_item_builtin(child)) continue; // Built-in shapes protected; check for custom duplicates
           cat->removeChild(child);
           delete child;
           return true;
@@ -795,8 +795,8 @@ private:
 
     add_stencil_item(cat_wiring, "Orthogonal Net Connector", StencilItemType::ToolConnector, 0,
                      IconFactory::IconType::Wire, "Orthogonal obstacle-avoiding net wire (C)", true);
-    add_stencil_item(cat_wiring, "Auto-Routing Arrow", StencilItemType::ToolAutoArrow, 0,
-                     IconFactory::IconType::Wire, "2-click auto-routing arrow with multipoint branching", true);
+    add_stencil_item(cat_wiring, "Multi-Point Arrow Connector", StencilItemType::ToolAutoArrow, 0,
+                     IconFactory::IconType::MultiPointArrow, "Multi-point polyline arrow connector with waypoints (Shift+W)", true);
   }
 
   QTreeWidgetItem* add_stencil_item(
@@ -1067,8 +1067,12 @@ public:
       canvas_->set_tool_mode(renderer::ToolMode::AddPolygon);
       return;
     }
-    if (type == StencilItemType::ToolConnector || type == StencilItemType::ToolAutoArrow) {
+    if (type == StencilItemType::ToolConnector) {
       canvas_->set_tool_mode(renderer::ToolMode::AddConnector);
+      return;
+    }
+    if (type == StencilItemType::ToolAutoArrow) {
+      canvas_->set_tool_mode(renderer::ToolMode::AddMultiPointArrow);
       return;
     }
 

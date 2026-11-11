@@ -186,7 +186,7 @@ private:
       {"Snap & Grid Settings", "Alt+F9", "Snapping", "Open Snap & Grid settings dialog with tabs"},
       {"Toggle Angle Snapping", "Alt+A", "Snapping", "Snap figure rotation to angular increments (15° default)"},
       {"Free Rotation Override", "Alt (Hold while dragging)", "Snapping", "Bypass angle snap for smooth free rotation"},
-      {"Toggle Rulers", "Ctrl+Shift+R", "Snapping", "Toggle metric canvas rulers on top and left margins"},
+      {"Toggle Rulers", "Alt+Shift+R", "Snapping", "Toggle metric canvas rulers on top and left margins"},
       {"Toggle Smart Guides", "Ctrl+Shift+G, Alt+F10", "Snapping", "Toggle dynamic alignment and spacing visual guides"},
       {"Toggle Line Jumps", "None", "Snapping", "Toggle wire bridge loops at crossing intersections"},
 

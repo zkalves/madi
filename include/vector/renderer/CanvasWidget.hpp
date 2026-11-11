@@ -45,6 +45,8 @@ enum class ToolMode : uint8_t {
   AddPolygon,
   AddInputPort,
   AddOutputPort,
+  AddBidirectionalPort,
+  AddMultiPointArrow,
   AddCustomShape
 };
 
@@ -351,6 +353,25 @@ public:
   bool finish_polygon_creation();
   void cancel_polygon_creation();
 
+  // Multi-Point Arrow Connector Creation & Management
+  [[nodiscard]] const std::vector<core::Vec2d>& in_progress_arrow_points() const noexcept { return in_progress_arrow_points_; }
+  [[nodiscard]] bool is_multipoint_arrow_active() const noexcept {
+    return tool_mode_ == ToolMode::AddMultiPointArrow || !in_progress_arrow_points_.empty();
+  }
+  bool finish_multipoint_arrow();
+  void cancel_multipoint_arrow();
+  core::EdgeId add_multipoint_arrow(
+      const std::vector<core::Vec2d>& waypoints,
+      core::NodeId src_node = core::InvalidNodeId,
+      core::PortId src_port = core::InvalidPortId,
+      core::NodeId dst_node = core::InvalidNodeId,
+      core::PortId dst_port = core::InvalidPortId,
+      const std::string& name = {});
+
+  // Transactional Undo / Redo Actions
+  void undo();
+  void redo();
+
   // Shape and Wiring Actions
   core::NodeId add_shape(core::ShapeType type, core::Vec2d world_pos, const std::string& name = {}, bool snap_pos = true);
   core::NodeId add_polygon(core::Vec2d world_pos, int sides = 6, const std::string& name = {}, bool snap_pos = true);
@@ -395,6 +416,9 @@ public:
 
   // Hierarchical Diagram Port Management & Automatic Symbol Sync
   core::NodeId add_hierarchical_port(core::Vec2d pos, const std::string& port_type, const std::string& name = {}, bool snap_pos = true);
+  core::NodeId add_hierarchical_port(core::Vec2d pos, const char* port_type, const std::string& name = {}, bool snap_pos = true) {
+    return add_hierarchical_port(pos, std::string(port_type), name, snap_pos);
+  }
   core::NodeId add_hierarchical_port(core::Vec2d pos, bool is_input, const std::string& name = {}, bool snap_pos = true);
   void start_canvas_drag_to_palette();
   void sync_current_subsystem_symbol();
@@ -696,6 +720,10 @@ private:
   int pending_polygon_sides_{6};
   std::vector<core::Vec2d> in_progress_polygon_points_;
   core::Vec2d polygon_cursor_world_{0.0, 0.0};
+  std::vector<core::Vec2d> in_progress_arrow_points_;
+  core::Vec2d arrow_cursor_world_{0.0, 0.0};
+  core::NodeId arrow_source_node_{core::InvalidNodeId};
+  core::PortId arrow_source_port_{core::InvalidPortId};
   std::vector<core::Vec2d> parametric_initial_vertices_;
   std::unordered_map<std::string, std::string> parametric_initial_props_;
 

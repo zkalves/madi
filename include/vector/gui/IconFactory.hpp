@@ -83,7 +83,8 @@ public:
     PolygonDraw,
     AngleSnap,
     RotateCW,
-    RotateCCW
+    RotateCCW,
+    MultiPointArrow
   };
 
   static QPixmap render_pixmap(IconType type, const QColor& fg, int size = 48) {
@@ -840,6 +841,26 @@ public:
         arrow << QPointF(px(16), px(18)) << QPointF(px(8), px(20)) << QPointF(px(12), px(28));
         p.setBrush(fg);
         p.drawPolygon(arrow);
+        break;
+      }
+      case IconType::MultiPointArrow: {
+        p.setPen(QPen(fg, px(2.2), Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        QPolygonF polyline;
+        polyline << QPointF(px(8), px(38))
+                 << QPointF(px(20), px(16))
+                 << QPointF(px(30), px(28))
+                 << QPointF(px(40), px(12));
+        p.drawPolyline(polyline);
+        p.setBrush(fg);
+        QPolygonF arrow;
+        arrow << QPointF(px(40), px(12))
+              << QPointF(px(31), px(14))
+              << QPointF(px(38), px(21));
+        p.drawPolygon(arrow);
+        p.setBrush(QColor(59, 130, 246));
+        p.setPen(Qt::NoPen);
+        p.drawEllipse(QRectF(px(20) - px(2.5), px(16) - px(2.5), px(5), px(5)));
+        p.drawEllipse(QRectF(px(30) - px(2.5), px(28) - px(2.5), px(5), px(5)));
         break;
       }
     }

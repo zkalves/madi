@@ -111,6 +111,14 @@ void CanvasWidget::set_tool_mode(ToolMode mode) {
     case ToolMode::AddOutputPort:
       active_template_ = {PlacementCategory::HierarchicalPort, core::ShapeType::OutputPort, 0, {}, "out_port", 84.0, 28.0, false, "out", ""};
       break;
+    case ToolMode::AddBidirectionalPort:
+      active_template_ = {PlacementCategory::HierarchicalPort, core::ShapeType::BidirectionalPort, 0, {}, "inout_port", 84.0, 28.0, true, "inout", ""};
+      break;
+    case ToolMode::AddMultiPointArrow:
+      in_progress_arrow_points_.clear();
+      arrow_source_node_ = core::InvalidNodeId;
+      arrow_source_port_ = core::InvalidPortId;
+      break;
     default:
       break;
   }
@@ -167,6 +175,14 @@ void CanvasWidget::set_tool_mode(ToolMode mode) {
     case ToolMode::AddOutputPort:
       setCursor(Qt::CrossCursor);
       emit status_message_requested("Tool: Output Port (Move pointer to position with snap, click to place, Right-click/Esc to cancel)");
+      break;
+    case ToolMode::AddBidirectionalPort:
+      setCursor(Qt::CrossCursor);
+      emit status_message_requested("Tool: Bidirectional Port (Move pointer to position with snap, click to place, Right-click/Esc to cancel)");
+      break;
+    case ToolMode::AddMultiPointArrow:
+      setCursor(Qt::CrossCursor);
+      emit status_message_requested("Tool: Multi-Point Arrow (Click canvas or ports to place waypoints, Double-click or Enter to finish, Esc to cancel)");
       break;
     case ToolMode::AddCustomShape:
       setCursor(Qt::CrossCursor);
@@ -227,6 +243,7 @@ core::NodeId CanvasWidget::instantiate_template_at(const ShapePlacementTemplate&
       }
       emit diagram_modified();
     }
+    select_node(nid, true);
   }
 
   return nid;
@@ -244,9 +261,12 @@ void CanvasWidget::finalize_instantiation() {
   tmpl.width = final_bounds.width;
   tmpl.height = final_bounds.height;
 
-  instantiate_template_at(tmpl, final_bounds.center());
+  const core::NodeId nid = instantiate_template_at(tmpl, final_bounds.center());
 
   cancel_placement();
+  if (nid != core::InvalidNodeId) {
+    select_node(nid, true);
+  }
 }
 
 core::PortId CanvasWidget::find_hit_port(core::Vec2d world_pt, double tolerance, core::NodeId* out_node) const {
@@ -1076,7 +1096,8 @@ static QPainterPath node_to_world_path(const core::Node& node) {
   if (node.shape == core::ShapeType::Rectangle ||
       node.shape == core::ShapeType::HierarchicalBlock ||
       node.shape == core::ShapeType::InputPort ||
-      node.shape == core::ShapeType::OutputPort) {
+      node.shape == core::ShapeType::OutputPort ||
+      node.shape == core::ShapeType::BidirectionalPort) {
     path.addRect(rf);
   } else if (node.shape == core::ShapeType::RoundedRect) {
     const double rx = std::min(8.0, std::min(b.width, b.height) * 0.2);
@@ -2363,6 +2384,7 @@ core::NodeId CanvasWidget::add_hierarchical_port(core::Vec2d pos, const std::str
   node.shape = is_bi ? core::ShapeType::BidirectionalPort : (is_input ? core::ShapeType::InputPort : core::ShapeType::OutputPort);
   node.properties["interface_kind"] = is_bi ? "inout" : (is_input ? "input" : "output");
   node.properties["port_type"] = is_bi ? "inout" : (is_input ? "in" : "out");
+  node.properties["fill_color"] = is_bi ? "#A855F7" : (is_input ? "#10B981" : "#F59E0B");
 
   size_t count = 0;
   for (const auto& [nid, n] : graph_model_->nodes()) {
@@ -2684,19 +2706,28 @@ void CanvasWidget::mouseDoubleClickEvent(QMouseEvent* event) {
     }
   }
 
+  if (tool_mode_ == ToolMode::AddMultiPointArrow || !in_progress_arrow_points_.empty()) {
+    if (in_progress_arrow_points_.size() >= 2) {
+      finish_multipoint_arrow();
+      event->accept();
+      return;
+    }
+  }
+
   if (event->button() == Qt::LeftButton) {
     const core::Vec2d click_world = screen_to_world({
       static_cast<double>(event->position().x()),
       static_cast<double>(event->position().y())
     });
 
+    const double edge_tol = 20.0 / std::max(0.1, zoom_level_);
     if (spatial_index_) {
-      auto hits = spatial_index_->query_point(click_world);
+      auto hits = spatial_index_->query_box({click_world.x - edge_tol, click_world.y - edge_tol, 2.0 * edge_tol, 2.0 * edge_tol});
       if (!hits.empty()) {
         const core::NodeId clicked_node = pick_topmost_node(hits);
         if (graph_model_) {
           if (const auto* n = graph_model_->find_node(clicked_node)) {
-            if (!n->is_subsystem() && core::is_near_shape_edge(*n, click_world, 10.0 / std::max(0.1, zoom_level_))) {
+            if (!n->is_subsystem() && core::is_near_shape_edge(*n, click_world, edge_tol)) {
               insert_control_point_at_world(clicked_node, click_world);
               event->accept();
               return;
@@ -2704,7 +2735,7 @@ void CanvasWidget::mouseDoubleClickEvent(QMouseEvent* event) {
             if (n->is_subsystem()) {
               drill_down_node(clicked_node);
               return;
-            } else {
+            } else if (n->contains_point(click_world)) {
               start_inline_text_edit(clicked_node);
               return;
             }
@@ -2720,6 +2751,22 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
                         static_cast<double>(event->position().y())};
   interaction_start_world_ = screen_to_world(last_mouse_screen_);
 
+  // Mouse button 8 = Undo, Mouse button 9 = Redo
+  if (event->button() == Qt::BackButton ||
+      event->button() == Qt::ExtraButton1 ||
+      event->button() == Qt::ExtraButton8) {
+    undo();
+    event->accept();
+    return;
+  }
+  if (event->button() == Qt::ForwardButton ||
+      event->button() == Qt::ExtraButton2 ||
+      event->button() == Qt::ExtraButton9) {
+    redo();
+    event->accept();
+    return;
+  }
+
   if (is_space_panning_ && event->button() == Qt::LeftButton) {
     interaction_state_ = InteractionState::Panning;
     setCursor(Qt::ClosedHandCursor);
@@ -2728,8 +2775,11 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
 
   if (event->button() == Qt::MiddleButton ||
       (event->button() == Qt::LeftButton && (event->modifiers() & Qt::AltModifier))) {
-    interaction_state_ = InteractionState::Panning;
-    return;
+    core::NodeId h_node = core::InvalidNodeId;
+    if (event->button() == Qt::MiddleButton || hit_test_handles(last_mouse_screen_, &h_node) == HandleType::None) {
+      interaction_state_ = InteractionState::Panning;
+      return;
+    }
   }
 
   // Right-click cancels candidate placement mode or active wiring
@@ -2788,6 +2838,62 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
     }
   }
 
+  // Interactive Point-and-Click Multi-Point Arrow Connector Tool
+  if (tool_mode_ == ToolMode::AddMultiPointArrow || !in_progress_arrow_points_.empty()) {
+    if (event->button() == Qt::LeftButton) {
+      core::Vec2d pt_to_add = arrow_cursor_world_;
+      if (in_progress_arrow_points_.empty() && pt_to_add.x == 0.0 && pt_to_add.y == 0.0) {
+        pt_to_add = interaction_start_world_;
+      }
+
+      core::NodeId clicked_node = core::InvalidNodeId;
+      core::PortId clicked_port = core::InvalidPortId;
+      if (spatial_index_) {
+        const auto hits = spatial_index_->query_point(pt_to_add);
+        if (!hits.empty()) {
+          clicked_node = pick_topmost_node(hits);
+          if (graph_model_) {
+            clicked_port = find_closest_or_create_port(*graph_model_, clicked_node, pt_to_add);
+          }
+        }
+      }
+
+      if (in_progress_arrow_points_.empty()) {
+        arrow_source_node_ = clicked_node;
+        arrow_source_port_ = clicked_port;
+        in_progress_arrow_points_.push_back(pt_to_add);
+        emit status_message_requested(QString("Multi-Point Arrow: Started at (%1, %2). Click next waypoint.")
+            .arg(static_cast<int>(pt_to_add.x)).arg(static_cast<int>(pt_to_add.y)));
+      } else {
+        if (clicked_node != core::InvalidNodeId && clicked_node != arrow_source_node_) {
+          in_progress_arrow_points_.push_back(pt_to_add);
+          finish_multipoint_arrow();
+          event->accept();
+          return;
+        }
+
+        if (pt_to_add.distance_sq_to(in_progress_arrow_points_.back()) > 1e-4) {
+          in_progress_arrow_points_.push_back(pt_to_add);
+          emit status_message_requested(QString("Multi-Point Arrow: Waypoint %1 placed at (%2, %3). Double-click or Enter to finish.")
+              .arg(in_progress_arrow_points_.size())
+              .arg(static_cast<int>(pt_to_add.x)).arg(static_cast<int>(pt_to_add.y)));
+        }
+      }
+      update();
+      event->accept();
+      return;
+    } else if (event->button() == Qt::RightButton) {
+      if (in_progress_arrow_points_.size() >= 2) {
+        finish_multipoint_arrow();
+      } else {
+        cancel_multipoint_arrow();
+        set_tool_mode(ToolMode::Select);
+      }
+      event->accept();
+      return;
+    }
+  }
+
   if (event->button() != Qt::LeftButton) {
     return;
   }
@@ -2795,6 +2901,18 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
   // Handle placement of new shapes (Unified Shape Placement Engine with Drag-to-Resize)
   if (is_placement_tool_active()) {
     if (interaction_state_ == InteractionState::InstantiatingResize && instantiation_two_click_active_) {
+      finalize_instantiation();
+      event->accept();
+      return;
+    }
+
+    const bool is_resize_symbol = (active_template_.name == "ResizedSymbol" ||
+                                  active_template_.name == "RatioLockedSymbol" ||
+                                  active_template_.name == "TwoClickSymbol");
+    if (!is_resize_symbol) {
+      if (!placement_preview_bounds_.is_valid() || placement_preview_bounds_.width <= 0.0) {
+        placement_preview_bounds_ = get_placement_bounds(tool_mode_, interaction_start_world_);
+      }
       finalize_instantiation();
       event->accept();
       return;
@@ -3445,6 +3563,42 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
       return;
     }
 
+    // Point-and-Click Multi-Point Arrow Connector Tool Real-time Tracking & Snapping
+    if (tool_mode_ == ToolMode::AddMultiPointArrow || !in_progress_arrow_points_.empty()) {
+      core::Vec2d snapped = current_world;
+      if (!(event->modifiers() & Qt::AltModifier)) {
+        if (grid_manager_ && grid_manager_->is_snap_enabled() && grid::has_flag(grid_manager_->snap_flags(), grid::SnapFlags::Grid)) {
+          snapped = grid_manager_->snap_to_grid(current_world);
+        }
+        if (!in_progress_arrow_points_.empty()) {
+          const auto& prev = in_progress_arrow_points_.back();
+          const double snap_tol = (grid_manager_ ? grid_manager_->snap_tolerance() : 8.0) / std::max(0.2, zoom_level_);
+          if (std::abs(current_world.x - prev.x) <= snap_tol) {
+            snapped.x = prev.x;
+          }
+          if (std::abs(current_world.y - prev.y) <= snap_tol) {
+            snapped.y = prev.y;
+          }
+        }
+      }
+      arrow_cursor_world_ = snapped;
+      setCursor(Qt::CrossCursor);
+
+      const size_t pt_count = in_progress_arrow_points_.size();
+      if (pt_count == 0) {
+        emit cursor_position_changed(QString("Multi-Point Arrow: Click start position or port | (%1, %2)")
+            .arg(static_cast<int>(snapped.x)).arg(static_cast<int>(snapped.y)));
+      } else {
+        emit cursor_position_changed(QString("Multi-Point Arrow: %1 point(s) placed | Next (%2, %3) [Double-click or Enter to finish]")
+            .arg(pt_count)
+            .arg(static_cast<int>(snapped.x)).arg(static_cast<int>(snapped.y)));
+      }
+
+      last_mouse_screen_ = current_screen;
+      update();
+      return;
+    }
+
     if (is_placement_tool_active()) {
       core::Rect2d cand_bounds = get_placement_bounds(tool_mode_, current_world);
 
@@ -3729,6 +3883,21 @@ void CanvasWidget::keyPressEvent(QKeyEvent* event) {
       }
     } else if (event->key() == Qt::Key_Escape) {
       cancel_polygon_creation();
+      set_tool_mode(ToolMode::Select);
+      event->accept();
+      return;
+    }
+  }
+
+  if (tool_mode_ == ToolMode::AddMultiPointArrow || !in_progress_arrow_points_.empty()) {
+    if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
+      if (in_progress_arrow_points_.size() >= 2) {
+        finish_multipoint_arrow();
+        event->accept();
+        return;
+      }
+    } else if (event->key() == Qt::Key_Escape) {
+      cancel_multipoint_arrow();
       set_tool_mode(ToolMode::Select);
       event->accept();
       return;
@@ -4513,6 +4682,7 @@ bool CanvasWidget::is_placement_tool_active() const noexcept {
          tool_mode_ == ToolMode::AddHierarchicalBlock ||
          tool_mode_ == ToolMode::AddInputPort ||
          tool_mode_ == ToolMode::AddOutputPort ||
+         tool_mode_ == ToolMode::AddBidirectionalPort ||
          tool_mode_ == ToolMode::AddCustomShape;
 }
 
@@ -4539,6 +4709,7 @@ core::Rect2d CanvasWidget::get_placement_bounds(ToolMode mode, core::Vec2d cente
         break;
       case ToolMode::AddInputPort:
       case ToolMode::AddOutputPort:
+      case ToolMode::AddBidirectionalPort:
         w = 84.0;
         h = 28.0;
         break;
@@ -4558,6 +4729,7 @@ void CanvasWidget::cancel_placement() {
   placement_preview_bounds_ = {0.0, 0.0, 0.0, 0.0};
   active_smart_guides_.clear();
   in_progress_polygon_points_.clear();
+  cancel_multipoint_arrow();
   interaction_state_ = InteractionState::None;
   instantiation_drag_active_ = false;
   instantiation_two_click_active_ = false;
@@ -4643,6 +4815,116 @@ void CanvasWidget::cancel_polygon_creation() {
 #ifdef VECTOR_ENABLE_QT
   update();
 #endif
+}
+
+bool CanvasWidget::finish_multipoint_arrow() {
+  if (in_progress_arrow_points_.size() < 2 || !graph_model_) {
+    cancel_multipoint_arrow();
+    set_tool_mode(ToolMode::Select);
+    return false;
+  }
+
+  core::NodeId dst_node = core::InvalidNodeId;
+  core::PortId dst_port = core::InvalidPortId;
+  const auto& last_pt = in_progress_arrow_points_.back();
+  if (spatial_index_) {
+    const auto hits = spatial_index_->query_point(last_pt);
+    if (!hits.empty()) {
+      dst_node = pick_topmost_node(hits);
+      if (dst_node != arrow_source_node_) {
+        dst_port = find_closest_or_create_port(*graph_model_, dst_node, last_pt);
+      } else {
+        dst_node = core::InvalidNodeId;
+      }
+    }
+  }
+
+  const auto pts = in_progress_arrow_points_;
+  add_multipoint_arrow(pts, arrow_source_node_, arrow_source_port_, dst_node, dst_port);
+  in_progress_arrow_points_.clear();
+  arrow_source_node_ = core::InvalidNodeId;
+  arrow_source_port_ = core::InvalidPortId;
+  set_tool_mode(ToolMode::Select);
+  return true;
+}
+
+void CanvasWidget::cancel_multipoint_arrow() {
+  in_progress_arrow_points_.clear();
+  arrow_source_node_ = core::InvalidNodeId;
+  arrow_source_port_ = core::InvalidPortId;
+#ifdef VECTOR_ENABLE_QT
+  update();
+#endif
+}
+
+core::EdgeId CanvasWidget::add_multipoint_arrow(
+    const std::vector<core::Vec2d>& waypoints,
+    core::NodeId src_node,
+    core::PortId src_port,
+    core::NodeId dst_node,
+    core::PortId dst_port,
+    const std::string& name) {
+  if (!graph_model_ || waypoints.size() < 2) return core::InvalidEdgeId;
+
+  core::Edge edge;
+  edge.name = name.empty() ? ("Arrow " + std::to_string(graph_model_->edge_count() + 1)) : name;
+  edge.source_node = src_node;
+  edge.source_port = src_port;
+  edge.target_node = dst_node;
+  edge.target_port = dst_port;
+  edge.waypoints = waypoints;
+  edge.routing_style = core::RoutingStyle::Direct;
+  edge.arrowhead = "filled";
+  edge.properties["arrowhead"] = "filled";
+  edge.properties["connector_type"] = "arrow";
+
+  core::EdgeId eid = core::InvalidEdgeId;
+  if (command_history_) {
+    auto cmd = std::make_unique<core::ConnectPortsCommand>(*graph_model_, std::move(edge));
+    auto* raw_cmd = cmd.get();
+    command_history_->execute(std::move(cmd));
+    eid = raw_cmd->created_id();
+    if (eid == core::InvalidEdgeId && !graph_model_->edges().empty()) {
+      for (const auto& [e_id, _] : graph_model_->edges()) {
+        eid = std::max(eid, e_id);
+      }
+    }
+  } else {
+    eid = graph_model_->add_edge(std::move(edge));
+  }
+
+  select_edge(eid, true);
+  refresh_spatial_index();
+#ifdef VECTOR_ENABLE_QT
+  update();
+  emit diagram_modified();
+  emit status_message_requested(QString("Created Multi-Point Arrow with %1 waypoints").arg(waypoints.size()));
+#endif
+  return eid;
+}
+
+void CanvasWidget::undo() {
+  if (command_history_ && command_history_->can_undo()) {
+    command_history_->undo();
+    refresh_spatial_index();
+#ifdef VECTOR_ENABLE_QT
+    update();
+    emit diagram_modified();
+    emit status_message_requested("Undo performed (Mouse Button 8)");
+#endif
+  }
+}
+
+void CanvasWidget::redo() {
+  if (command_history_ && command_history_->can_redo()) {
+    command_history_->redo();
+    refresh_spatial_index();
+#ifdef VECTOR_ENABLE_QT
+    update();
+    emit diagram_modified();
+    emit status_message_requested("Redo performed (Mouse Button 9)");
+#endif
+  }
 }
 
 void CanvasWidget::pan_by(core::Vec2d delta) {
@@ -5906,7 +6188,7 @@ void CanvasWidget::render_canvas() {
           painter.drawPolygon(badge);
 
           painter.setPen(Qt::white);
-          const QString tag = QString::fromStdString(node.name);
+          const QString tag = (is_bi ? QString("↔ ") : QString()) + QString::fromStdString(node.name);
           const double left_pad = is_bi ? 8.0 : (is_in ? 2.0 : 10.0);
           const double right_pad = is_bi ? -8.0 : (is_in ? -10.0 : -2.0);
           painter.drawText(qr_f.adjusted(left_pad, 0.0, right_pad, 0.0), Qt::AlignCenter, tag);
@@ -6465,6 +6747,108 @@ void CanvasWidget::render_canvas() {
         painter.drawLine(QPointF(q_cur.x(), q_cur.y() - 10.0), QPointF(q_cur.x(), q_cur.y() + 10.0));
 
         const QString tip_str = "Click to place first vertex";
+        const QFont tip_font("sans-serif", 8, QFont::Bold);
+        painter.setFont(tip_font);
+        const QFontMetrics fm(tip_font);
+        const int tw = fm.horizontalAdvance(tip_str) + 14;
+        const int th = fm.height() + 6;
+        const QRectF tip_rect(q_cur.x() + 12.0, q_cur.y() + 12.0, tw, th);
+
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(0x1E, 0x29, 0x3B, 200));
+        painter.drawRoundedRect(tip_rect, 4.0, 4.0);
+        painter.setPen(Qt::white);
+        painter.drawText(tip_rect, Qt::AlignCenter, tip_str);
+      }
+    }
+
+    // 7.7 In-Progress Multi-Point Arrow Connector Overlay
+    if (tool_mode_ == ToolMode::AddMultiPointArrow || !in_progress_arrow_points_.empty()) {
+      const auto s_cur = world_to_screen(arrow_cursor_world_);
+      const QPointF q_cur(s_cur.x, s_cur.y);
+
+      if (!in_progress_arrow_points_.empty()) {
+        QPolygonF q_placed;
+        q_placed.reserve(static_cast<qsizetype>(in_progress_arrow_points_.size()));
+        for (const auto& pt : in_progress_arrow_points_) {
+          const auto sp = world_to_screen(pt);
+          q_placed << QPointF(sp.x, sp.y);
+        }
+
+        // 1. Solid polyline between placed waypoints
+        painter.setPen(QPen(QColor(0x25, 0x63, 0xEB), 2.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        painter.setBrush(Qt::NoBrush);
+        for (qsizetype i = 1; i < q_placed.size(); ++i) {
+          painter.drawLine(q_placed[i - 1], q_placed[i]);
+        }
+
+        // 2. Dynamic rubberband line from last placed waypoint to cursor
+        painter.setPen(QPen(QColor(0x25, 0x63, 0xEB), 2.0, Qt::DashLine, Qt::RoundCap, Qt::RoundJoin));
+        painter.drawLine(q_placed.back(), q_cur);
+
+        // 3. Dynamic terminal arrowhead preview pointing toward cursor
+        QPointF p_prev = q_placed.back();
+        double dx = q_cur.x() - p_prev.x();
+        double dy = q_cur.y() - p_prev.y();
+        double dist = std::hypot(dx, dy);
+        if (dist > 1.0) {
+          double angle = std::atan2(dy, dx);
+          const double arrow_len = 14.0;
+          const double arrow_width = 8.0;
+          QPointF tip = q_cur;
+          QPointF left(tip.x() - arrow_len * std::cos(angle) + arrow_width * std::sin(angle),
+                       tip.y() - arrow_len * std::sin(angle) - arrow_width * std::cos(angle));
+          QPointF right(tip.x() - arrow_len * std::cos(angle) - arrow_width * std::sin(angle),
+                        tip.y() - arrow_len * std::sin(angle) + arrow_width * std::cos(angle));
+          QPolygonF arrow_poly;
+          arrow_poly << tip << left << right;
+          painter.setBrush(QColor(0x25, 0x63, 0xEB));
+          painter.setPen(QPen(QColor(0x1D, 0x4E, 0xD8), 1.0));
+          painter.drawPolygon(arrow_poly);
+        }
+
+        // 4. Waypoint handle circles & numbers
+        for (qsizetype i = 0; i < q_placed.size(); ++i) {
+          const QPointF& vp = q_placed[i];
+          const bool is_start = (i == 0);
+
+          painter.setBrush(is_start ? QColor(0x10, 0xB9, 0x81) : Qt::white);
+          painter.setPen(QPen(QColor(0x25, 0x63, 0xEB), 1.5));
+          painter.drawEllipse(vp, 4.0, 4.0);
+
+          painter.setFont(QFont("sans-serif", 7, QFont::Bold));
+          painter.setPen(QColor(0x1E, 0x29, 0x3B));
+          painter.drawText(QRectF(vp.x() + 6.0, vp.y() - 14.0, 24.0, 14.0),
+                           Qt::AlignLeft | Qt::AlignVCenter, QString::number(i + 1));
+        }
+
+        // 5. Floating status pill badge near mouse pointer
+        QString tip_str;
+        if (q_placed.size() < 2) {
+          tip_str = "Click next waypoint (min 2 points)";
+        } else {
+          tip_str = QString("%1 waypoints  •  Double-click/Enter to finish").arg(q_placed.size());
+        }
+
+        const QFont tip_font("sans-serif", 8, QFont::Bold);
+        painter.setFont(tip_font);
+        const QFontMetrics fm(tip_font);
+        const int tw = fm.horizontalAdvance(tip_str) + 14;
+        const int th = fm.height() + 6;
+        const QRectF tip_rect(q_cur.x() + 12.0, q_cur.y() + 12.0, tw, th);
+
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(0x1E, 0x29, 0x3B, 210));
+        painter.drawRoundedRect(tip_rect, 4.0, 4.0);
+        painter.setPen(Qt::white);
+        painter.drawText(tip_rect, Qt::AlignCenter, tip_str);
+      } else {
+        // Initial point crosshair guide
+        painter.setPen(QPen(QColor(0x25, 0x63, 0xEB, 200), 1.2, Qt::DashLine));
+        painter.drawLine(QPointF(q_cur.x() - 10.0, q_cur.y()), QPointF(q_cur.x() + 10.0, q_cur.y()));
+        painter.drawLine(QPointF(q_cur.x(), q_cur.y() - 10.0), QPointF(q_cur.x(), q_cur.y() + 10.0));
+
+        const QString tip_str = "Click start position or port";
         const QFont tip_font("sans-serif", 8, QFont::Bold);
         painter.setFont(tip_font);
         const QFontMetrics fm(tip_font);

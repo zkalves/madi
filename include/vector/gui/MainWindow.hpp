@@ -746,6 +746,24 @@ public:
   }
 
 protected:
+  void mousePressEvent(QMouseEvent* event) override {
+    if (event->button() == Qt::BackButton ||
+        event->button() == Qt::ExtraButton1 ||
+        event->button() == Qt::ExtraButton8) {
+      if (canvas_) canvas_->undo();
+      event->accept();
+      return;
+    }
+    if (event->button() == Qt::ForwardButton ||
+        event->button() == Qt::ExtraButton2 ||
+        event->button() == Qt::ExtraButton9) {
+      if (canvas_) canvas_->redo();
+      event->accept();
+      return;
+    }
+    QMainWindow::mousePressEvent(event);
+  }
+
   void closeEvent(QCloseEvent* event) override {
     if (!maybe_save()) {
       event->ignore();
@@ -1032,6 +1050,24 @@ private:
       canvas_->set_tool_mode(vector::renderer::ToolMode::AddOutputPort);
     });
 
+    action_tool_biport_ = new QAction("&Bidirectional Port", tool_action_group_);
+    action_tool_biport_->setCheckable(true);
+    action_tool_biport_->setShortcuts({QKeySequence(Qt::Key_B)});
+    action_tool_biport_->setToolTip("Hierarchical Bidirectional Port (B)\nAdd inout boundary port automatically synced to symbol");
+    action_tool_biport_->setStatusTip("Hierarchical Bidirectional Port: Add inout boundary port automatically synced to symbol (B)");
+    connect(action_tool_biport_, &QAction::triggered, this, [this]() {
+      canvas_->set_tool_mode(vector::renderer::ToolMode::AddBidirectionalPort);
+    });
+
+    action_tool_multipoint_arrow_ = new QAction("&Multi-Point Arrow", tool_action_group_);
+    action_tool_multipoint_arrow_->setCheckable(true);
+    action_tool_multipoint_arrow_->setShortcuts({QKeySequence(Qt::SHIFT | Qt::Key_W), QKeySequence(Qt::SHIFT | Qt::Key_C)});
+    action_tool_multipoint_arrow_->setToolTip("Multi-Point Arrow Connector (Shift+W)\nDraw polyline arrows with multiple waypoints and arrowhead");
+    action_tool_multipoint_arrow_->setStatusTip("Multi-Point Arrow: Draw polyline arrows with multiple waypoints (Shift+W)");
+    connect(action_tool_multipoint_arrow_, &QAction::triggered, this, [this]() {
+      canvas_->set_tool_mode(vector::renderer::ToolMode::AddMultiPointArrow);
+    });
+
     connect(canvas_, &vector::renderer::CanvasWidget::tool_mode_changed,
             this, [this](vector::renderer::ToolMode mode) {
       if (mode == vector::renderer::ToolMode::Select) {
@@ -1054,6 +1090,8 @@ private:
       else if (mode == vector::renderer::ToolMode::AddHierarchicalBlock) action_tool_block_->setChecked(true);
       else if (mode == vector::renderer::ToolMode::AddInputPort) action_tool_inport_->setChecked(true);
       else if (mode == vector::renderer::ToolMode::AddOutputPort) action_tool_outport_->setChecked(true);
+      else if (mode == vector::renderer::ToolMode::AddBidirectionalPort) action_tool_biport_->setChecked(true);
+      else if (mode == vector::renderer::ToolMode::AddMultiPointArrow) action_tool_multipoint_arrow_->setChecked(true);
     });
 
     // View Actions
@@ -1148,7 +1186,7 @@ private:
     action_toggle_rulers_ = new QAction("Show &Rulers", this);
     action_toggle_rulers_->setCheckable(true);
     action_toggle_rulers_->setChecked(true);
-    action_toggle_rulers_->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_R));
+    action_toggle_rulers_->setShortcut(QKeySequence(Qt::ALT | Qt::SHIFT | Qt::Key_R));
     connect(action_toggle_rulers_, &QAction::toggled, canvas_, &vector::renderer::CanvasWidget::set_show_rulers);
 
     action_toggle_line_jumps_ = new QAction("Show &Line Jumps (Bridges)", this);
@@ -1277,6 +1315,7 @@ private:
     auto* menu_ins_tools = menu_insert->addMenu("&Tools");
     menu_ins_tools->addAction(action_tool_select_);
     menu_ins_tools->addAction(action_tool_wire_);
+    menu_ins_tools->addAction(action_tool_multipoint_arrow_);
     auto* act_branch = menu_ins_tools->addAction("Add &Multipoint Branch");
     connect(act_branch, &QAction::triggered, this, [this]() {
       if (!canvas_ || !graph_) return;
@@ -1300,6 +1339,7 @@ private:
     menu_ins_hierarchy->addAction(action_tool_block_);
     menu_ins_hierarchy->addAction(action_tool_inport_);
     menu_ins_hierarchy->addAction(action_tool_outport_);
+    menu_ins_hierarchy->addAction(action_tool_biport_);
 
     // 4. View Menu
     auto* menu_view = menuBar()->addMenu("&View");
@@ -1497,7 +1537,7 @@ private:
     menu_workspace->addAction(action_reset_layout_);
 
     // 5. Arrange Menu
-    auto* menu_arrange = menuBar()->addMenu("&Arrange");
+    auto* menu_arrange = menuBar()->addMenu("Arran&ge");
     auto* menu_arr_order = menu_arrange->addMenu("&Order");
     menu_arr_order->addAction(action_bring_to_front_);
     menu_arr_order->addAction(action_bring_forward_);
@@ -1590,6 +1630,7 @@ private:
     menu_hierarchy->addAction(action_tool_block_);
     menu_hierarchy->addAction(action_tool_inport_);
     menu_hierarchy->addAction(action_tool_outport_);
+    menu_hierarchy->addAction(action_tool_biport_);
 
     // 6. Themes Menu
     auto* menu_themes = menuBar()->addMenu("&Themes");
@@ -2017,7 +2058,9 @@ private:
     if (action_tool_block_) action_tool_block_->setIcon(IconFactory::create_icon(IconFactory::IconType::SubsystemBlock, fg));
     if (action_tool_inport_) action_tool_inport_->setIcon(IconFactory::create_icon(IconFactory::IconType::InputPort, fg));
     if (action_tool_outport_) action_tool_outport_->setIcon(IconFactory::create_icon(IconFactory::IconType::OutputPort, fg));
+    if (action_tool_biport_) action_tool_biport_->setIcon(IconFactory::create_icon(IconFactory::IconType::BidirectionalPort, fg));
     if (action_tool_wire_) action_tool_wire_->setIcon(IconFactory::create_icon(IconFactory::IconType::Wire, fg));
+    if (action_tool_multipoint_arrow_) action_tool_multipoint_arrow_->setIcon(IconFactory::create_icon(IconFactory::IconType::MultiPointArrow, fg));
 
     if (action_merge_) action_merge_->setIcon(IconFactory::create_icon(IconFactory::IconType::BooleanUnion, fg));
     if (action_bool_intersect_) action_bool_intersect_->setIcon(IconFactory::create_icon(IconFactory::IconType::BooleanIntersect, fg));
@@ -4234,7 +4277,9 @@ public:
   QAction* action_tool_block_{nullptr};
   QAction* action_tool_inport_{nullptr};
   QAction* action_tool_outport_{nullptr};
+  QAction* action_tool_biport_{nullptr};
   QAction* action_tool_wire_{nullptr};
+  QAction* action_tool_multipoint_arrow_{nullptr};
 
   QAction* action_zoom_in_{nullptr};
   QAction* action_zoom_out_{nullptr};
