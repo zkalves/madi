@@ -418,17 +418,32 @@ public:
         }
       }
     }
-    // 2. Snapshot incident edges or explicitly deleted edges
-    for (const auto& [eid, edge] : model_.edges()) {
-      bool incident = false;
-      for (NodeId nid : node_ids_) {
-        if (edge.source_node == nid || edge.target_node == nid) {
-          incident = true;
-          break;
-        }
+    // 2. Snapshot explicitly deleted edges only
+    for (EdgeId eid : edge_ids_) {
+      if (const auto* e = model_.find_edge(eid)) {
+        saved_edges_.push_back(*e);
       }
-      if (incident || std::find(edge_ids_.begin(), edge_ids_.end(), eid) != edge_ids_.end()) {
-        saved_edges_.push_back(edge);
+    }
+    // 3. Snapshot incident edges that will be detached (NOT deleted)
+    for (const auto& [eid, edge] : model_.edges()) {
+      if (std::find(edge_ids_.begin(), edge_ids_.end(), eid) == edge_ids_.end()) {
+        bool incident = false;
+        for (NodeId nid : node_ids_) {
+          if (edge.source_node == nid || edge.target_node == nid) {
+            incident = true;
+            break;
+          }
+          for (const auto& s : edge.extra_sources) {
+            if (s.source_node == nid) { incident = true; break; }
+          }
+          for (const auto& d : edge.extra_destinations) {
+            if (d.target_node == nid) { incident = true; break; }
+          }
+          if (incident) break;
+        }
+        if (incident) {
+          detached_edges_before_.push_back(edge);
+        }
       }
     }
   }
@@ -454,6 +469,11 @@ public:
     for (const auto& edge : saved_edges_) {
       model_.add_edge(edge);
     }
+    for (const auto& edge : detached_edges_before_) {
+      if (auto* e = model_.find_edge(edge.id)) {
+        *e = edge;
+      }
+    }
     model_.update_all_edge_routes();
     return true;
   }
@@ -470,6 +490,39 @@ private:
   std::vector<Node> saved_nodes_;
   std::vector<Port> saved_ports_;
   std::vector<Edge> saved_edges_;
+  std::vector<Edge> detached_edges_before_;
+};
+
+class MoveEdgeCommand : public ICommand {
+public:
+  MoveEdgeCommand(GraphModel& model, EdgeId edge_id, Edge old_state, Edge new_state)
+    : model_(model), edge_id_(edge_id), old_state_(std::move(old_state)), new_state_(std::move(new_state)) {}
+
+  bool execute() override {
+    if (auto* e = model_.find_edge(edge_id_)) {
+      *e = new_state_;
+      return true;
+    }
+    return false;
+  }
+
+  bool undo() override {
+    if (auto* e = model_.find_edge(edge_id_)) {
+      *e = old_state_;
+      return true;
+    }
+    return false;
+  }
+
+  [[nodiscard]] std::string description() const override {
+    return "Relocate Arrow Net " + std::to_string(edge_id_);
+  }
+
+private:
+  GraphModel& model_;
+  EdgeId edge_id_;
+  Edge old_state_;
+  Edge new_state_;
 };
 
 class PasteElementsCommand : public ICommand {

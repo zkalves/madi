@@ -2190,12 +2190,12 @@ int main(int argc, char* argv[]) {
     assert(tools_dock->windowTitle() == "Tools");
     assert(tools_dock->objectName() == "DockTools");
 
-    // Verify tools dock contains compact buttons with 28x28 size
+    // Verify tools dock contains buttons with two-line picture + wrapped text
     auto tool_buttons = tools_dock->findChildren<QToolButton*>();
     assert(!tool_buttons.isEmpty());
     for (auto* btn : tool_buttons) {
-      assert(btn->width() <= 32); // Compact sizing (28px fixed)
-      assert(btn->height() <= 32);
+      assert(btn->width() <= 120);
+      assert(btn->height() <= 120);
       (void)btn;
     }
 
@@ -3556,6 +3556,260 @@ int main(int argc, char* argv[]) {
 
     canvas->render_frame_for_test();
     std::cout << "[Test 43] Multi-Point Arrow Connector & Mouse Button 8/9 Undo/Redo passed successfully!" << std::endl;
+  }
+
+  // 44. Test Left Menu Two-Line Pictures, Text Wrapping, Dynamic Columns & Stencil Package Loading
+  {
+    std::cout << "\n[Test 44] Testing Left Menu Two-Line Pictures, Text Wrapping, Dynamic Columns & Stencil Packages..." << std::endl;
+    madi::gui::MainWindow win;
+    win.show();
+
+    auto* shapes_dock = win.dock_shapes();
+    auto* tools_dock = win.dock_tools();
+    assert(shapes_dock != nullptr && tools_dock != nullptr);
+
+    // 1. Verify Shapes & Tools Pictures are the size of two text lines (>= 32px)
+    const int two_lines = shapes_dock->compute_two_lines_height();
+    assert(two_lines >= 30);
+    assert(shapes_dock->tree_widget()->iconSize().width() >= two_lines);
+    assert(shapes_dock->tree_widget()->iconSize().height() >= two_lines);
+
+    // Verify word wrap is enabled on shapes tree
+    assert(shapes_dock->tree_widget()->isWordWrap());
+
+    // 2. Verify View Modes: Responsive Multi-Column Grid vs Hierarchical Tree
+    assert(shapes_dock->view_mode() == madi::gui::StencilLibraryDock::ViewMode::Columns);
+    shapes_dock->toggle_view_mode();
+    assert(shapes_dock->view_mode() == madi::gui::StencilLibraryDock::ViewMode::Tree);
+    shapes_dock->toggle_view_mode();
+    assert(shapes_dock->view_mode() == madi::gui::StencilLibraryDock::ViewMode::Columns);
+
+    // 3. Verify Basic Shape Groups are Non-Editable (Protected from deletion and renaming)
+    assert(shapes_dock->has_section("CSG Basis"));
+    assert(shapes_dock->has_section("Regular Polygons"));
+    assert(shapes_dock->has_section("Hierarchy & EDA Ports"));
+    assert(shapes_dock->has_section("Connectors & Routing"));
+
+    // Attempting to delete built-in basic shape groups must fail
+    assert(!shapes_dock->remove_section("📐 2D Geometric Primitives (CSG Basis)"));
+    assert(!shapes_dock->remove_section("⬡ Regular Polygons (N-gon Series)"));
+    assert(!shapes_dock->remove_section("⚙ Hierarchy & EDA Ports"));
+    assert(!shapes_dock->remove_section("⚡ Connectors & Routing"));
+    assert(shapes_dock->has_section("CSG Basis"));
+
+    // 4. Verify User Can Add More Categories (Fully Editable)
+    const int initial_custom_secs = shapes_dock->custom_section_count();
+    auto* user_cat = shapes_dock->create_new_section("⚡ High-Speed SerDes");
+    assert(user_cat != nullptr);
+    assert(shapes_dock->has_section("High-Speed SerDes"));
+    assert(!shapes_dock->is_category_builtin(user_cat));
+    assert(shapes_dock->custom_section_count() == initial_custom_secs + 1);
+
+    // Add shapes to user custom category
+    auto* serdes_tx = shapes_dock->add_shape_item("PAM4 Transmitter", madi::gui::StencilLibraryDock::StencilItemType::ShapeRect, 0, "⚡ High-Speed SerDes");
+    assert(serdes_tx != nullptr);
+    assert(shapes_dock->has_shape("PAM4 Transmitter"));
+
+    // User category can be deleted
+    assert(shapes_dock->remove_section("High-Speed SerDes"));
+    assert(!shapes_dock->has_section("High-Speed SerDes"));
+    assert(shapes_dock->custom_section_count() == initial_custom_secs);
+
+    // 5. Verify User Can Load Packages with More Categories (.madi, .vlib, .vdiag, etc.)
+    const int shapes_before_pkg = shapes_dock->total_shape_count();
+    const bool pkg_loaded = shapes_dock->load_package("examples/counter.madi");
+    assert(pkg_loaded);
+    assert(shapes_dock->has_section("counter"));
+    assert(shapes_dock->total_shape_count() > shapes_before_pkg);
+    assert(shapes_dock->has_shape("Clock & Reset Gen") || shapes_dock->has_shape("4-Bit Counter Core"));
+
+    // 6. Verify Dynamic Columns reflow upon resize
+    shapes_dock->resize(160, 600);
+    shapes_dock->reflow_columns();
+    shapes_dock->resize(360, 600);
+    shapes_dock->reflow_columns();
+
+    // 7. Verify Tools Dock Has the Exact Same Behaviour as Shapes Dock
+    // (a) Picture size is two text lines
+    const int tool_two_lines = tools_dock->compute_two_lines_height();
+    assert(tool_two_lines >= 30);
+    assert(tools_dock->tree_widget()->iconSize().width() >= tool_two_lines);
+    assert(tools_dock->tree_widget()->iconSize().height() >= tool_two_lines);
+
+    // (b) Word wrap is enabled on tools tree and buttons have text under icon
+    assert(tools_dock->tree_widget()->isWordWrap());
+    auto t_buttons = tools_dock->findChildren<QToolButton*>();
+    for (auto* btn : t_buttons) {
+      if (btn->text().contains("\n")) {
+        assert(btn->toolButtonStyle() == Qt::ToolButtonTextUnderIcon);
+        assert(btn->iconSize().width() >= tool_two_lines);
+      }
+    }
+
+    // (c) View Modes: Responsive Columns vs Hierarchical Tree
+    assert(tools_dock->view_mode() == madi::gui::ToolLibraryDock::ViewMode::Columns);
+    tools_dock->toggle_view_mode();
+    assert(tools_dock->view_mode() == madi::gui::ToolLibraryDock::ViewMode::Tree);
+    tools_dock->toggle_view_mode();
+    assert(tools_dock->view_mode() == madi::gui::ToolLibraryDock::ViewMode::Columns);
+
+    // (d) Basic Tool Groups are Non-Editable (Protected from deletion/renaming)
+    assert(tools_dock->has_section("Interaction Tools"));
+    assert(tools_dock->has_section("Boolean & Combine"));
+    assert(tools_dock->has_section("Hierarchy & Scope"));
+    assert(tools_dock->has_section("Stacking & Order"));
+    assert(tools_dock->has_section("Rotate & Snap"));
+    assert(tools_dock->has_section("History & Undo"));
+
+    assert(!tools_dock->remove_section("Interaction Tools"));
+    assert(!tools_dock->remove_section("Boolean & Combine"));
+    assert(!tools_dock->remove_section("Hierarchy & Scope"));
+    assert(!tools_dock->remove_section("Rotate & Snap"));
+    assert(tools_dock->has_section("Interaction Tools"));
+
+    // (e) User Can Add More Categories (Fully Editable)
+    const int initial_custom_tools_secs = tools_dock->custom_section_count();
+    auto* user_tool_cat = tools_dock->create_new_section("⚡ Custom Macro Tools");
+    assert(user_tool_cat != nullptr);
+    assert(tools_dock->has_section("Custom Macro Tools"));
+    assert(!tools_dock->is_category_builtin(user_tool_cat));
+    assert(tools_dock->custom_section_count() == initial_custom_tools_secs + 1);
+
+    // Add tool to user custom category
+    auto custom_tool = tools_dock->add_tool("⚡ Custom Macro Tools", "custom_auto_align", "Auto-Align Grid",
+                                            "Auto-Align\nGrid", madi::gui::IconFactory::IconType::AngleSnap,
+                                            "Align figures to active grid", []() {}, false);
+    assert(custom_tool != nullptr);
+
+    // Custom tool category can be deleted
+    assert(tools_dock->remove_section("Custom Macro Tools"));
+    assert(!tools_dock->has_section("Custom Macro Tools"));
+    assert(tools_dock->custom_section_count() == initial_custom_tools_secs);
+
+    // (f) User Can Load Packages with More Categories (.madi, .vlib, etc.)
+    const int tools_before_pkg = tools_dock->total_tool_count();
+    const bool tool_pkg_loaded = tools_dock->load_package("examples/counter.madi");
+    assert(tool_pkg_loaded);
+    assert(tools_dock->has_section("counter"));
+    assert(tools_dock->total_tool_count() > tools_before_pkg);
+
+    // (g) Dynamic Columns reflow upon resize
+    tools_dock->resize(160, 600);
+    tools_dock->reflow_columns();
+    tools_dock->resize(360, 600);
+    tools_dock->reflow_columns();
+
+    std::cout << "[Test 44] Left Menu Two-Line Pictures, Text Wrapping, Dynamic Columns & Stencil Packages passed successfully!" << std::endl;
+  }
+
+  // 45. Test Arrow Disconnection, Single-Ended Following, Reattachment & Shape Following
+  {
+    std::cout << "\n[Test 45] Testing Arrow Disconnection, Single-Ended Following, Reattachment & Shape Following..." << std::endl;
+    madi::gui::MainWindow win;
+    win.show();
+
+    auto* canvas = win.canvas();
+    auto* graph = win.graph_model();
+    assert(canvas != nullptr && graph != nullptr);
+
+    // 1. Create two shapes: Box A and Box B
+    const auto node_a = canvas->add_shape(madi::core::ShapeType::Rectangle, {100.0, 100.0}, "Box A", false);
+    const auto node_b = canvas->add_shape(madi::core::ShapeType::Rectangle, {350.0, 100.0}, "Box B", false);
+    assert(node_a != madi::core::InvalidNodeId && node_b != madi::core::InvalidNodeId);
+
+    // 2. Connect Box A to Box B with an arrow
+    const auto edge_id = canvas->auto_route_arrow(node_a, madi::core::InvalidPortId, node_b, madi::core::InvalidPortId);
+    assert(edge_id != madi::core::InvalidEdgeId);
+
+    auto* edge = graph->find_edge(edge_id);
+    assert(edge != nullptr);
+    assert(edge->source_node == node_a && edge->target_node == node_b);
+    assert(!edge->waypoints.empty());
+    const auto initial_start = edge->waypoints.front();
+    const auto initial_end = edge->waypoints.back();
+
+    // 3. Move Box A: Verify arrow follows Box A
+    auto* n_a = graph->find_node(node_a);
+    n_a->bounds.x += 30.0;
+    n_a->bounds.y += 20.0;
+    graph->update_all_edge_routes();
+    assert(edge->waypoints.front().x > initial_start.x);
+    assert(edge->waypoints.front().y > initial_start.y);
+
+    // 4. Move Box B: Verify arrow follows Box B
+    auto* n_b = graph->find_node(node_b);
+    n_b->bounds.x += 40.0;
+    graph->update_all_edge_routes();
+    assert(edge->waypoints.back().x > initial_end.x);
+
+    // 5. Select edge and simulate dragging EndEndpoint to disconnect from Box B
+    canvas->select_edge(edge_id, false);
+    const auto p_free_end = madi::core::Vec2d{250.0, 350.0};
+    const auto s_end = canvas->world_to_screen(edge->waypoints.back());
+
+    // Mouse press on EndEndpoint handle
+    QMouseEvent press_evt(QEvent::MouseButtonPress, QPoint(static_cast<int>(s_end.x), static_cast<int>(s_end.y)),
+                          Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &press_evt);
+
+    // Mouse move to free space
+    const auto s_free = canvas->world_to_screen(p_free_end);
+    QMouseEvent move_evt(QEvent::MouseMove, QPoint(static_cast<int>(s_free.x), static_cast<int>(s_free.y)),
+                         Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &move_evt);
+
+    // Mouse release in free space
+    QMouseEvent rel_evt(QEvent::MouseButtonRelease, QPoint(static_cast<int>(s_free.x), static_cast<int>(s_free.y)),
+                        Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &rel_evt);
+
+    // Verify arrow target is disconnected, but source is still attached to Box A
+    assert(edge->target_node == madi::core::InvalidNodeId);
+    assert(edge->source_node == node_a);
+
+    // 6. Move Box A: Verify the single-ended arrow STILL follows Box A!
+    const auto prev_start = edge->waypoints.front();
+    n_a->bounds.x += 25.0;
+    n_a->bounds.y += 15.0;
+    graph->update_all_edge_routes();
+    assert(edge->waypoints.front().x > prev_start.x);
+    assert(edge->waypoints.front().y > prev_start.y);
+
+    // 7. Create Box C and reattach the arrow's free end to Box C
+    const auto node_c = canvas->add_shape(madi::core::ShapeType::Rectangle, {450.0, 350.0}, "Box C", false);
+    assert(node_c != madi::core::InvalidNodeId);
+
+    // Mouse press on the free endpoint
+    const auto s_cur_end = canvas->world_to_screen(edge->waypoints.back());
+    QMouseEvent press_c(QEvent::MouseButtonPress, QPoint(static_cast<int>(s_cur_end.x), static_cast<int>(s_cur_end.y)),
+                        Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &press_c);
+
+    // Mouse move to Box C
+    auto* n_c = graph->find_node(node_c);
+    const auto s_box_c = canvas->world_to_screen(n_c->bounds.center());
+    QMouseEvent move_c(QEvent::MouseMove, QPoint(static_cast<int>(s_box_c.x), static_cast<int>(s_box_c.y)),
+                       Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &move_c);
+
+    // Mouse release on Box C
+    QMouseEvent rel_c(QEvent::MouseButtonRelease, QPoint(static_cast<int>(s_box_c.x), static_cast<int>(s_box_c.y)),
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &rel_c);
+
+    // Verify arrow is now reattached to Box C!
+    assert(edge->target_node == node_c);
+    assert(edge->source_node == node_a);
+
+    // 8. Move Box C: Verify arrow follows Box C after reattachment!
+    const auto prev_c_end = edge->waypoints.back();
+    n_c->bounds.x += 35.0;
+    n_c->bounds.y += 25.0;
+    graph->update_all_edge_routes();
+    assert(edge->waypoints.back().x > prev_c_end.x);
+    assert(edge->waypoints.back().y > prev_c_end.y);
+
+    std::cout << "[Test 45] Arrow Disconnection, Single-Ended Following, Reattachment & Shape Following passed successfully!" << std::endl;
   }
 
   std::cout << "===> All Theme System, Snapping & Hierarchical Port Smoke Tests passed successfully!" << std::endl;

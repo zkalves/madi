@@ -564,12 +564,19 @@ public:
   void set_wire_crossing_style(WireCrossingStyle style);
   [[nodiscard]] WireCrossingStyle wire_crossing_style() const noexcept { return wire_crossing_style_; }
 
-  // Multipoint Arrows (1 Source to N Destinations)
-  bool add_arrow_branch(core::EdgeId edge_id, core::NodeId target_node, core::PortId target_port = core::InvalidPortId);
-  bool add_arrow_branch_to_selected(core::NodeId target_node, core::PortId target_port = core::InvalidPortId);
+  // Multipoint Arrows & Topologies (Multiple Inputs & Multiple Outputs)
+  bool add_arrow_branch(core::EdgeId edge_id, core::NodeId target_node = core::InvalidNodeId, core::PortId target_port = core::InvalidPortId);
+  bool add_arrow_branch_to_selected(core::NodeId target_node = core::InvalidNodeId, core::PortId target_port = core::InvalidPortId);
+  bool add_arrow_source_branch(core::EdgeId edge_id, core::NodeId source_node = core::InvalidNodeId, core::PortId source_port = core::InvalidPortId);
+  bool add_arrow_source_branch_to_selected(core::NodeId source_node = core::InvalidNodeId, core::PortId source_port = core::InvalidPortId);
   void set_edge_branches_aligned(core::EdgeId edge_id, bool aligned);
   [[nodiscard]] bool is_edge_branches_aligned(core::EdgeId edge_id) const;
   void set_selected_edge_branches_aligned(bool aligned);
+  void set_edge_source_arrow(core::EdgeId edge_id, bool enable, const std::string& shape = "stealth");
+  void set_edge_target_arrow(core::EdgeId edge_id, bool enable, const std::string& shape = "stealth");
+  void set_selected_edge_source_arrow(bool enable, const std::string& shape = "stealth");
+  void set_selected_edge_target_arrow(bool enable, const std::string& shape = "stealth");
+  void relocate_edge(core::EdgeId edge_id, core::Vec2d delta);
 
   // Auto-Routing of Arrows with Connect Points
   core::EdgeId auto_route_arrow(core::NodeId src_node, core::PortId src_port, core::NodeId dst_node, core::PortId dst_port);
@@ -599,6 +606,7 @@ signals:
   void snap_mode_toggled(bool enabled);
   void wire_crossing_style_changed(WireCrossingStyle style);
   void edge_branches_aligned_changed(core::EdgeId edge_id, bool aligned);
+  void edge_arrowhead_changed(core::EdgeId edge_id);
   void node_rotation_changed(core::NodeId id, double deg);
   void angle_snap_toggled(bool enabled);
   void angle_snap_step_changed(double step_deg);
@@ -671,8 +679,26 @@ private:
     RotatingNode,
     WiringConnector,
     InstantiatingResize,
-    DraggingParametricHandle
+    DraggingParametricHandle,
+    DraggingEdge,
+    DraggingEdgeHandle
   };
+
+  enum class EdgeHandleKind {
+    None,
+    StartEndpoint,
+    EndEndpoint,
+    Waypoint,
+    ExtraSourceEndpoint,
+    ExtraDestinationEndpoint
+  };
+
+  struct ActiveEdgeHandle {
+    EdgeHandleKind kind{EdgeHandleKind::None};
+    size_t index{0};
+  };
+
+  [[nodiscard]] ActiveEdgeHandle hit_test_edge_handles(core::Vec2d screen_pt, core::EdgeId edge_id) const;
 
   InteractionState interaction_state_{InteractionState::None};
   core::Vec2d last_mouse_screen_{0.0, 0.0};
@@ -682,6 +708,13 @@ private:
   core::EdgeId selected_edge_{core::InvalidEdgeId};
   std::unordered_map<core::NodeId, core::Rect2d> drag_initial_bounds_;
   core::Vec2d drag_accumulated_delta_{0.0, 0.0};
+
+  // Edge dragging & handle relocation
+  ActiveEdgeHandle active_edge_handle_;
+  ActiveEdgeHandle hovered_edge_handle_;
+  core::Vec2d edge_drag_start_world_{0.0, 0.0};
+  core::Edge edge_snapshot_before_drag_;
+  bool is_edge_drag_modified_{false};
 
   // Clipboard cache
   std::vector<core::Node> clipboard_nodes_;

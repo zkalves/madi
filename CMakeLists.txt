@@ -182,6 +182,7 @@ if(Qt6_FOUND)
     include/madi/gui/FormatInspectorDock.hpp
     include/madi/gui/IconFactory.hpp
     include/madi/gui/StencilLibraryDock.hpp
+    include/madi/gui/ToolLibraryDock.hpp
     include/madi/gui/ThemeManager.hpp
     include/madi/gui/HierarchyTreeDock.hpp
     include/madi/gui/SnapGridSettingsDialog.hpp

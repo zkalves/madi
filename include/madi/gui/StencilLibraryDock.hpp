@@ -18,20 +18,28 @@
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
 #include <QDropEvent>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFontMetrics>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
+#include <QListWidgetItem>
 #include <QMenu>
 #include <QMessageBox>
 #include <QMimeData>
 #include <QPushButton>
+#include <QResizeEvent>
+#include <QScrollArea>
 #include <QShortcut>
 #include <QSpinBox>
+#include <QStackedWidget>
+#include <QToolButton>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
@@ -41,13 +49,20 @@
 #include <vector>
 
 #include "madi/core/GraphModel.hpp"
+#include "madi/core/HierarchicalBlock.hpp"
 #include "madi/gui/IconFactory.hpp"
 #include "madi/gui/ThemeManager.hpp"
+#include "madi/io/DrawioParser.hpp"
+#include "madi/io/StorageEngine.hpp"
 #include "madi/renderer/CanvasWidget.hpp"
 
 namespace madi::gui {
 
 class StencilLibraryDock;
+
+// ==============================================================================
+// StencilTreeWidget: Drag-enabled tree view for hierarchical shape explorer
+// ==============================================================================
 
 class StencilTreeWidget : public QTreeWidget {
 public:
@@ -77,10 +92,136 @@ private:
   StencilLibraryDock* dock_{nullptr};
 };
 
+// ==============================================================================
+// StencilCategoryListWidget: Responsive multi-column grid of shapes
+// Forms dynamic columns depending on available width with wrapped text
+// ==============================================================================
+
+class StencilCategoryListWidget : public QListWidget {
+public:
+  explicit StencilCategoryListWidget(StencilLibraryDock* dock, QTreeWidgetItem* tree_cat, QWidget* parent = nullptr)
+      : QListWidget(parent), dock_(dock), tree_cat_(tree_cat) {
+    setViewMode(QListView::IconMode);
+    setResizeMode(QListView::Adjust);
+    setFlow(QListView::LeftToRight);
+    setWrapping(true);
+    setWordWrap(true);
+    setMovement(QListView::Static);
+    setDragEnabled(true);
+    setUniformItemSizes(true);
+    setSpacing(4);
+    setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    setStyleSheet(
+        "QListWidget { background: transparent; border: none; font-size: 10px; } "
+        "QListWidget::item { border-radius: 4px; padding: 2px; text-align: center; } "
+        "QListWidget::item:hover { background-color: rgba(128, 128, 128, 0.18); } "
+        "QListWidget::item:selected { background-color: #0078D4; color: #FFFFFF; }");
+  }
+
+  void update_dynamic_height() {
+    const int cnt = count();
+    if (cnt == 0) {
+      setFixedHeight(0);
+      return;
+    }
+    const int avail_w = std::max(60, viewport()->width());
+    const int item_w = gridSize().width() > 0 ? gridSize().width() : 80;
+    const int item_h = gridSize().height() > 0 ? gridSize().height() : 72;
+    const int cols = std::max(1, avail_w / item_w);
+    const int rows = (cnt + cols - 1) / cols;
+    setFixedHeight(rows * item_h + 8);
+  }
+
+  [[nodiscard]] QTreeWidgetItem* tree_category() const noexcept { return tree_cat_; }
+
+protected:
+  void mousePressEvent(QMouseEvent* event) override {
+    if (event->button() == Qt::LeftButton) {
+      drag_start_pos_ = event->pos();
+    }
+    QListWidget::mousePressEvent(event);
+  }
+
+  void mouseMoveEvent(QMouseEvent* event) override;
+  void contextMenuEvent(QContextMenuEvent* event) override;
+
+private:
+  QPoint drag_start_pos_;
+  StencilLibraryDock* dock_{nullptr};
+  QTreeWidgetItem* tree_cat_{nullptr};
+};
+
+// ==============================================================================
+// StencilCategoryHeader: Collapsible accordion header with non-editable indicator
+// ==============================================================================
+
+class StencilCategoryHeader : public QWidget {
+public:
+  StencilCategoryHeader(const QString& title, bool is_builtin, StencilCategoryListWidget* list_widget, StencilLibraryDock* dock, QWidget* parent = nullptr)
+      : QWidget(parent), list_widget_(list_widget), dock_(dock), is_builtin_(is_builtin) {
+    auto* layout = new QHBoxLayout(this);
+    layout->setContentsMargins(4, 2, 4, 2);
+    layout->setSpacing(4);
+    layout->setAlignment(Qt::AlignLeft);
+
+    btn_toggle_ = new QToolButton(this);
+    btn_toggle_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    btn_toggle_->setText(title + (is_builtin ? " 🔒" : ""));
+    btn_toggle_->setStyleSheet("QToolButton { font-weight: bold; font-size: 11px; border: none; background: transparent; text-align: left; }");
+    btn_toggle_->setCheckable(true);
+    btn_toggle_->setChecked(true);
+    btn_toggle_->setArrowType(Qt::DownArrow);
+
+    connect(btn_toggle_, &QToolButton::toggled, this, [this](bool checked) {
+      btn_toggle_->setArrowType(checked ? Qt::DownArrow : Qt::RightArrow);
+      if (list_widget_) {
+        list_widget_->setVisible(checked);
+        if (checked) list_widget_->update_dynamic_height();
+      }
+    });
+
+    layout->addWidget(btn_toggle_, 1);
+  }
+
+  void set_title(const QString& title, bool is_builtin) {
+    is_builtin_ = is_builtin;
+    btn_toggle_->setText(title + (is_builtin ? " 🔒" : ""));
+  }
+
+  [[nodiscard]] bool is_expanded() const noexcept {
+    return btn_toggle_->isChecked();
+  }
+
+  void set_expanded(bool exp) {
+    btn_toggle_->setChecked(exp);
+  }
+
+  [[nodiscard]] bool is_builtin() const noexcept { return is_builtin_; }
+
+protected:
+  void contextMenuEvent(QContextMenuEvent* event) override;
+
+private:
+  QToolButton* btn_toggle_{nullptr};
+  StencilCategoryListWidget* list_widget_{nullptr};
+  StencilLibraryDock* dock_{nullptr};
+  bool is_builtin_{false};
+};
+
+// ==============================================================================
+// StencilLibraryDock: Main left dock for shapes, tools, and diagram stencils
+// ==============================================================================
+
 class StencilLibraryDock : public QDockWidget {
   Q_OBJECT
 
 public:
+  enum class ViewMode {
+    Columns, // Responsive flow grid (columns depend on available width)
+    Tree     // Hierarchical tree view
+  };
+
   enum class StencilItemType {
     // 1. 2D Geometric Primitives (Universal Constructive CSG Basis)
     ShapeRect,
@@ -132,41 +273,100 @@ public:
     layout->setContentsMargins(4, 4, 4, 4);
     layout->setSpacing(4);
 
-    // Search bar (compact selector)
+    // Search bar & View Mode Switcher
+    auto* top_row = new QHBoxLayout();
+    top_row->setContentsMargins(0, 0, 0, 0);
+    top_row->setSpacing(3);
+
     search_edit_ = new QLineEdit(container);
     search_edit_->setPlaceholderText("🔍 Search shapes & primitives...");
     search_edit_->setClearButtonEnabled(true);
     search_edit_->setFixedHeight(24);
     search_edit_->setStyleSheet("QLineEdit { padding: 2px 6px; font-size: 11px; }");
     connect(search_edit_, &QLineEdit::textChanged, this, &StencilLibraryDock::filter_items);
-    layout->addWidget(search_edit_);
+    top_row->addWidget(search_edit_, 1);
 
-    // Tree of stencils with prominent 28x28 icons for clear visibility
-    tree_ = new StencilTreeWidget(container);
+    btn_view_mode_ = new QToolButton(container);
+    btn_view_mode_->setFixedHeight(24);
+    btn_view_mode_->setText("▦ Columns");
+    btn_view_mode_->setToolTip("Toggle between Responsive Columns Grid and Hierarchical Tree");
+    btn_view_mode_->setStyleSheet("QToolButton { font-size: 10px; font-weight: bold; padding: 2px 5px; }");
+    connect(btn_view_mode_, &QToolButton::clicked, this, &StencilLibraryDock::toggle_view_mode);
+    top_row->addWidget(btn_view_mode_);
+    layout->addLayout(top_row);
+
+    // Dynamic icon sizing: picture size is exactly two text lines!
+    const int two_lines = compute_two_lines_height();
+
+    // Stacked central view: Index 0 = Responsive Columns View, Index 1 = Tree View
+    view_stack_ = new QStackedWidget(container);
+
+    // 1. Columns View (Accordion scroll area with responsive grid lists)
+    scroll_columns_ = new QScrollArea(view_stack_);
+    scroll_columns_->setWidgetResizable(true);
+    scroll_columns_->setFrameShape(QFrame::NoFrame);
+    scroll_columns_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
+    widget_columns_ = new QWidget(scroll_columns_);
+    layout_columns_ = new QVBoxLayout(widget_columns_);
+    layout_columns_->setContentsMargins(2, 2, 2, 2);
+    layout_columns_->setSpacing(4);
+    layout_columns_->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    scroll_columns_->setWidget(widget_columns_);
+    view_stack_->addWidget(scroll_columns_);
+
+    // 2. Tree View (Tree of stencils with word wrap and two-lines icon size)
+    tree_ = new StencilTreeWidget(view_stack_);
     tree_->set_dock(this);
     tree_->setHeaderHidden(true);
     tree_->setIndentation(12);
     tree_->setAnimated(true);
-    tree_->setIconSize(QSize(28, 28));
+    tree_->setWordWrap(true);
+    tree_->setIconSize(QSize(two_lines, two_lines));
     tree_->setStyleSheet(
         "QTreeWidget { font-size: 11px; } "
-        "QTreeWidget::item { padding: 3px 4px; min-height: 32px; } "
+        "QTreeWidget::item { padding: 3px 4px; min-height: 38px; } "
         "QTreeWidget::item:selected { background-color: #0078D4; color: #FFFFFF; }");
     tree_->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(tree_, &QTreeWidget::customContextMenuRequested, this, &StencilLibraryDock::show_context_menu);
-    layout->addWidget(tree_, 1);
+    view_stack_->addWidget(tree_);
 
-    // Bottom Action Row: [ ➕ Add... ] [ 🗑 Remove ] [ Insert ]
-    auto* action_row = new QHBoxLayout();
-    action_row->setContentsMargins(0, 0, 0, 0);
-    action_row->setSpacing(3);
+    // Default to Columns Mode (multi-column responsive flow)
+    view_stack_->setCurrentIndex(0);
+    layout->addWidget(view_stack_, 1);
+
+    // Bottom Action Rows:
+    // Row 1: [ ➕ Add... ] [ 📁 + Category ] [ 📦 Load Package... ]
+    auto* action_row1 = new QHBoxLayout();
+    action_row1->setContentsMargins(0, 0, 0, 0);
+    action_row1->setSpacing(3);
 
     btn_add_ = new QPushButton("➕ Add...", container);
     btn_add_->setFixedHeight(24);
     btn_add_->setToolTip("Add custom shape, new section, or capture from canvas element");
-    btn_add_->setStyleSheet("QPushButton { font-size: 11px; padding: 2px 6px; }");
+    btn_add_->setStyleSheet("QPushButton { font-size: 11px; padding: 2px 4px; }");
     connect(btn_add_, &QPushButton::clicked, this, &StencilLibraryDock::show_add_menu);
-    action_row->addWidget(btn_add_);
+    action_row1->addWidget(btn_add_);
+
+    btn_add_category_ = new QPushButton("📁 + Category", container);
+    btn_add_category_->setFixedHeight(24);
+    btn_add_category_->setToolTip("Add a new custom category for shapes and diagrams");
+    btn_add_category_->setStyleSheet("QPushButton { font-size: 11px; padding: 2px 4px; }");
+    connect(btn_add_category_, &QPushButton::clicked, this, &StencilLibraryDock::prompt_new_section_dialog);
+    action_row1->addWidget(btn_add_category_);
+
+    btn_load_package_ = new QPushButton("📦 Load Package...", container);
+    btn_load_package_->setFixedHeight(24);
+    btn_load_package_->setToolTip("Load a package (.vlib, .vdiag, .madi, .json, .drawio, .xml) with more categories");
+    btn_load_package_->setStyleSheet("QPushButton { font-size: 11px; padding: 2px 4px; }");
+    connect(btn_load_package_, &QPushButton::clicked, this, &StencilLibraryDock::prompt_load_package_dialog);
+    action_row1->addWidget(btn_load_package_);
+    layout->addLayout(action_row1);
+
+    // Row 2: [ 🗑 Remove ] [ Insert ]
+    auto* action_row2 = new QHBoxLayout();
+    action_row2->setContentsMargins(0, 0, 0, 0);
+    action_row2->setSpacing(3);
 
     btn_remove_ = new QPushButton("🗑 Remove", container);
     btn_remove_->setFixedHeight(24);
@@ -174,16 +374,15 @@ public:
     btn_remove_->setToolTip("Remove selected custom shape or custom section (Delete key)");
     btn_remove_->setStyleSheet("QPushButton { font-size: 11px; padding: 2px 6px; }");
     connect(btn_remove_, &QPushButton::clicked, this, &StencilLibraryDock::remove_current_selected);
-    action_row->addWidget(btn_remove_);
+    action_row2->addWidget(btn_remove_);
 
     btn_insert_ = new QPushButton("Insert", container);
     btn_insert_->setFixedHeight(24);
     btn_insert_->setToolTip("Insert selected shape onto canvas center");
     btn_insert_->setStyleSheet("QPushButton { font-size: 11px; font-weight: bold; padding: 2px 8px; }");
     connect(btn_insert_, &QPushButton::clicked, this, &StencilLibraryDock::insert_current_selected);
-    action_row->addWidget(btn_insert_);
-
-    layout->addLayout(action_row);
+    action_row2->addWidget(btn_insert_);
+    layout->addLayout(action_row2);
 
     setWidget(container);
 
@@ -207,12 +406,38 @@ public:
       }
     });
 
-    auto* del_shortcut = new QShortcut(QKeySequence::Delete, tree_);
+    auto* del_shortcut = new QShortcut(QKeySequence::Delete, this);
     connect(del_shortcut, &QShortcut::activated, this, &StencilLibraryDock::remove_current_selected);
+  }
+
+  [[nodiscard]] int compute_two_lines_height() const noexcept {
+    const int line_spacing = fontMetrics().lineSpacing();
+    return std::max(32, line_spacing * 2);
   }
 
   void set_canvas(renderer::CanvasWidget* canvas) noexcept {
     canvas_ = canvas;
+  }
+
+  [[nodiscard]] ViewMode view_mode() const noexcept { return view_mode_; }
+  [[nodiscard]] QToolButton* view_mode_button() const noexcept { return btn_view_mode_; }
+
+  void toggle_view_mode() {
+    set_view_mode(view_mode_ == ViewMode::Columns ? ViewMode::Tree : ViewMode::Columns);
+  }
+
+  void set_view_mode(ViewMode mode) {
+    view_mode_ = mode;
+    if (view_mode_ == ViewMode::Columns) {
+      btn_view_mode_->setText("▦ Columns");
+      btn_view_mode_->setToolTip("Current: Multi-Column Grid. Click to switch to Tree view.");
+      view_stack_->setCurrentIndex(0);
+      reflow_columns();
+    } else {
+      btn_view_mode_->setText("☰ Tree");
+      btn_view_mode_->setToolTip("Current: Hierarchical Tree. Click to switch to Multi-Column Grid.");
+      view_stack_->setCurrentIndex(1);
+    }
   }
 
   [[nodiscard]] int total_shape_count() const noexcept {
@@ -248,6 +473,7 @@ public:
         }
       }
     }
+    sync_columns_view();
   }
 
   QTreeWidgetItem* add_shape_item(
@@ -291,6 +517,7 @@ public:
     item->setData(0, Qt::UserRole + 10, false);
     cat->setExpanded(true);
     tree_->setCurrentItem(item);
+    sync_columns_view();
     return item;
   }
 
@@ -313,11 +540,12 @@ public:
       }
     }
     auto* new_cat = new QTreeWidgetItem(tree_, QStringList() << clean_name);
-    new_cat->setData(0, Qt::UserRole + 10, false);
+    new_cat->setData(0, Qt::UserRole + 10, false); // User category is fully editable!
     new_cat->setExpanded(true);
     QFont bold_font = new_cat->font(0);
     bold_font.setBold(true);
     new_cat->setFont(0, bold_font);
+    sync_columns_view();
     return new_cat;
   }
 
@@ -344,8 +572,9 @@ public:
     for (int i = 0; i < tree_->topLevelItemCount(); ++i) {
       auto* cat = tree_->topLevelItem(i);
       if (cat->text(0).contains(name, Qt::CaseInsensitive)) {
-        if (is_category_builtin(cat)) return false; // Built-in sections protected!
+        if (is_category_builtin(cat)) return false; // Built-in basic shape groups are non-editable & protected!
         delete tree_->takeTopLevelItem(i);
+        sync_columns_view();
         return true;
       }
     }
@@ -355,22 +584,29 @@ public:
   void prompt_new_section_dialog() {
     bool ok = false;
     QString name = QInputDialog::getText(
-        this, "New Section", "Section Name:",
+        this, "New Category", "Category Name:",
         QLineEdit::Normal, "⭐ My Custom Shapes", &ok);
     if (ok && !name.trimmed().isEmpty()) {
       auto* cat = create_new_section(name.trimmed());
       tree_->setCurrentItem(cat);
+      sync_columns_view();
     }
   }
 
   void prompt_rename_section(QTreeWidgetItem* cat) {
-    if (!cat || is_category_builtin(cat)) return;
+    if (!cat) return;
+    if (is_category_builtin(cat)) {
+      QMessageBox::information(this, "Protected Category",
+                               "Basic shape groups are built-in and cannot be renamed.");
+      return;
+    }
     bool ok = false;
     QString name = QInputDialog::getText(
-        this, "Rename Section", "New Section Name:",
+        this, "Rename Category", "New Category Name:",
         QLineEdit::Normal, cat->text(0), &ok);
     if (ok && !name.trimmed().isEmpty()) {
       cat->setText(0, name.trimmed());
+      sync_columns_view();
     }
   }
 
@@ -383,6 +619,7 @@ public:
           if (is_item_builtin(child)) continue; // Built-in shapes protected; check for custom duplicates
           cat->removeChild(child);
           delete child;
+          sync_columns_view();
           return true;
         }
       }
@@ -397,6 +634,8 @@ public:
   [[nodiscard]] StencilTreeWidget* tree_widget() const noexcept { return tree_; }
   [[nodiscard]] QLineEdit* search_edit() const noexcept { return search_edit_; }
   [[nodiscard]] QPushButton* add_button() const noexcept { return btn_add_; }
+  [[nodiscard]] QPushButton* add_category_button() const noexcept { return btn_add_category_; }
+  [[nodiscard]] QPushButton* load_package_button() const noexcept { return btn_load_package_; }
   [[nodiscard]] QPushButton* remove_button() const noexcept { return btn_remove_; }
   [[nodiscard]] QPushButton* insert_button() const noexcept { return btn_insert_; }
 
@@ -504,7 +743,129 @@ public:
     item->setIcon(0, IconFactory::create_icon(itype, current_fg_));
     target_cat->setExpanded(true);
     tree_->setCurrentItem(item);
+    sync_columns_view();
     return item;
+  }
+
+  // ==============================================================================
+  // Package Loader: Load .vlib, .vdiag, .madi, .json, .drawio, .xml packages
+  // Creates dedicated shape categories populated with all components/symbols
+  // ==============================================================================
+
+  bool load_package(const QString& file_path) {
+    QFile file(file_path);
+    if (!file.open(QIODevice::ReadOnly)) {
+      return false;
+    }
+    const QByteArray data = file.readAll();
+    const QString content = QString::fromUtf8(data);
+    QFileInfo fi(file_path);
+    const QString ext = fi.suffix().toLower();
+    const QString base_name = fi.baseName();
+    QString cat_title = "📦 " + base_name;
+
+    int imported_count = 0;
+
+    if (ext == "madi" || ext == "json" || ext == "jsonc" || ext == "vlib" || ext == "vdiag" || ext == "yaml") {
+      io::StorageEngine engine;
+      core::GraphModel loaded_graph;
+      core::BlockLibraryManager loaded_lib;
+      auto res = engine.deserialize(content.toStdString(), loaded_graph, &loaded_lib);
+      if (res.success) {
+        // 1. Import library definitions if present
+        for (const auto& [uri, def] : loaded_lib.definitions()) {
+          QString item_name = QString::fromStdString(def.name().empty() ? uri : def.name());
+          auto* item = add_shape_item(item_name, StencilItemType::SubsystemBuiltin, 0, cat_title,
+                                      IconFactory::IconType::SubsystemBlock);
+          if (item) {
+            renderer::ShapePlacementTemplate tmpl;
+            tmpl.category = renderer::PlacementCategory::SubsystemBuiltin;
+            tmpl.name = item_name.toStdString();
+            tmpl.width = def.default_size().width > 0 ? def.default_size().width : 140.0;
+            tmpl.height = def.default_size().height > 0 ? def.default_size().height : 80.0;
+            item->setData(0, Qt::UserRole + 6, renderer::serialize_placement_template(tmpl));
+            item->setData(0, Qt::UserRole + 10, false);
+            imported_count++;
+          }
+        }
+
+        // 2. Import diagram nodes if present
+        for (const auto& [nid, node] : loaded_graph.nodes()) {
+          QString item_name = QString::fromStdString(node.name.empty() ? ("Shape " + std::to_string(nid)) : node.name);
+          StencilItemType stype = StencilItemType::ShapeRect;
+          IconFactory::IconType itype = IconFactory::IconType::Rectangle;
+          switch (node.shape) {
+            case core::ShapeType::RoundedRect: stype = StencilItemType::ShapeRoundedRect; itype = IconFactory::IconType::RoundedRect; break;
+            case core::ShapeType::Ellipse: stype = StencilItemType::ShapeEllipse; itype = IconFactory::IconType::Ellipse; break;
+            case core::ShapeType::HierarchicalBlock: stype = StencilItemType::SubsystemBuiltin; itype = IconFactory::IconType::SubsystemBlock; break;
+            case core::ShapeType::InputPort: stype = StencilItemType::ShapeInPort; itype = IconFactory::IconType::InputPort; break;
+            case core::ShapeType::OutputPort: stype = StencilItemType::ShapeOutPort; itype = IconFactory::IconType::OutputPort; break;
+            case core::ShapeType::BidirectionalPort: stype = StencilItemType::ShapeBiPort; itype = IconFactory::IconType::BidirectionalPort; break;
+            case core::ShapeType::CustomPolygon: stype = StencilItemType::CustomShape; itype = IconFactory::IconType::PolygonDraw; break;
+            default: break;
+          }
+          auto* item = add_shape_item(item_name, stype, 0, cat_title, itype);
+          if (item) {
+            renderer::ShapePlacementTemplate tmpl;
+            tmpl.category = renderer::PlacementCategory::ShapeType;
+            tmpl.shape_type = node.shape;
+            tmpl.name = item_name.toStdString();
+            tmpl.width = node.bounds.width > 0 ? node.bounds.width : 120.0;
+            tmpl.height = node.bounds.height > 0 ? node.bounds.height : 70.0;
+            tmpl.custom_vertices = node.polygon_vertices;
+            item->setData(0, Qt::UserRole + 6, renderer::serialize_placement_template(tmpl));
+            item->setData(0, Qt::UserRole + 10, false);
+            imported_count++;
+          }
+        }
+      }
+    } else if (ext == "drawio" || ext == "xml") {
+      io::DrawioParser parser;
+      core::GraphModel parsed_graph;
+      auto parsed = parser.import_xml(content.toStdString(), parsed_graph);
+      if (parsed.success) {
+        for (const auto& [nid, node] : parsed_graph.nodes()) {
+          QString item_name = QString::fromStdString(node.name.empty() ? ("Drawio " + std::to_string(nid)) : node.name);
+          auto* item = add_shape_item(item_name, StencilItemType::ShapeRect, 0, cat_title, IconFactory::IconType::Rectangle);
+          if (item) {
+            renderer::ShapePlacementTemplate tmpl;
+            tmpl.category = renderer::PlacementCategory::ShapeType;
+            tmpl.shape_type = node.shape;
+            tmpl.name = item_name.toStdString();
+            tmpl.width = node.bounds.width > 0 ? node.bounds.width : 120.0;
+            tmpl.height = node.bounds.height > 0 ? node.bounds.height : 70.0;
+            item->setData(0, Qt::UserRole + 6, renderer::serialize_placement_template(tmpl));
+            item->setData(0, Qt::UserRole + 10, false);
+            imported_count++;
+          }
+        }
+      }
+    }
+
+    if (imported_count > 0) {
+      sync_columns_view();
+      if (canvas_) {
+        emit canvas_->status_message_requested(QString("Loaded stencil package '%1' with %2 shapes into category '%3'.")
+            .arg(fi.fileName()).arg(imported_count).arg(cat_title));
+      }
+      return true;
+    }
+    return false;
+  }
+
+  void prompt_load_package_dialog() {
+    const QString fpath = QFileDialog::getOpenFileName(
+        this, "Load Stencil / Component Package", "",
+        "Stencil Packages (*.vlib *.vdiag *.madi *.json *.jsonc *.yaml *.drawio *.xml);;All Files (*)");
+    if (!fpath.isEmpty()) {
+      if (load_package(fpath)) {
+        QMessageBox::information(this, "Package Loaded",
+                                 QString("Package '%1' loaded successfully!").arg(QFileInfo(fpath).fileName()));
+      } else {
+        QMessageBox::warning(this, "Load Failed",
+                             QString("Could not load package '%1' or no valid shapes found.").arg(QFileInfo(fpath).fileName()));
+      }
+    }
   }
 
 public slots:
@@ -520,12 +881,13 @@ public slots:
     if (!current) return false;
     if (current->parent() == nullptr) {
       if (is_category_builtin(current)) {
-        return false; // Built-in category cannot be removed!
+        return false; // Built-in basic category cannot be removed!
       }
       int idx = tree_->indexOfTopLevelItem(current);
       if (idx >= 0) {
         delete tree_->takeTopLevelItem(idx);
         btn_remove_->setEnabled(false);
+        sync_columns_view();
         return true;
       }
       return false;
@@ -537,12 +899,14 @@ public slots:
     parent->removeChild(current);
     delete current;
     btn_remove_->setEnabled(false);
+    sync_columns_view();
     return true;
   }
 
   void show_add_menu() {
     QMenu menu(this);
-    auto* act_new_sec = menu.addAction("📁 New Section...");
+    auto* act_new_sec = menu.addAction("📁 New Category...");
+    auto* act_load_pkg = menu.addAction("📦 Load Stencil Package...");
     auto* act_custom = menu.addAction("📐 Add Custom Shape / N-gon...");
     auto* act_from_sel = menu.addAction("⭐ Add Selected from Canvas");
     if (!canvas_ || canvas_->selected_count() == 0) {
@@ -555,6 +919,8 @@ public slots:
     QAction* chosen = menu.exec(popup_pos);
     if (chosen == act_new_sec) {
       prompt_new_section_dialog();
+    } else if (chosen == act_load_pkg) {
+      prompt_load_package_dialog();
     } else if (chosen == act_custom) {
       prompt_custom_shape_dialog();
     } else if (chosen == act_from_sel) {
@@ -674,6 +1040,134 @@ public slots:
     handle_dropped_template(tmpl, tree_->currentItem());
   }
 
+  // ==============================================================================
+  // Synchronization between Tree Representation and Responsive Columns View
+  // ==============================================================================
+
+  void sync_columns_view() {
+    // Clear existing category sections in columns layout
+    for (auto* h : category_headers_) {
+      delete h;
+    }
+    category_headers_.clear();
+
+    for (auto* l : category_lists_) {
+      delete l;
+    }
+    category_lists_.clear();
+
+    const int two_lines = compute_two_lines_height();
+
+    // Populate each category as an accordion section with a responsive grid list
+    for (int i = 0; i < tree_->topLevelItemCount(); ++i) {
+      auto* cat = tree_->topLevelItem(i);
+      const bool builtin = is_category_builtin(cat);
+
+      auto* cat_list = new StencilCategoryListWidget(this, cat, widget_columns_);
+      cat_list->setIconSize(QSize(two_lines, two_lines));
+      cat_list->setGridSize(QSize(80, two_lines + 36));
+
+      for (int j = 0; j < cat->childCount(); ++j) {
+        auto* child = cat->child(j);
+        auto* list_item = new QListWidgetItem(child->icon(0), child->text(0), cat_list);
+        list_item->setToolTip(child->toolTip(0));
+        list_item->setData(Qt::UserRole, QVariant::fromValue(static_cast<void*>(child)));
+      }
+
+      connect(cat_list, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem* l_item) {
+        if (!l_item) return;
+        auto* tree_item = static_cast<QTreeWidgetItem*>(l_item->data(Qt::UserRole).value<void*>());
+        if (tree_item) trigger_item(tree_item);
+      });
+
+      connect(cat_list, &QListWidget::itemClicked, this, [this, cat_list](QListWidgetItem* l_item) {
+        if (!l_item) return;
+        auto* tree_item = static_cast<QTreeWidgetItem*>(l_item->data(Qt::UserRole).value<void*>());
+        if (tree_item) {
+          tree_->setCurrentItem(tree_item);
+          btn_remove_->setEnabled(!is_item_builtin(tree_item));
+        }
+      });
+
+      auto* cat_header = new StencilCategoryHeader(cat->text(0), builtin, cat_list, this, widget_columns_);
+      layout_columns_->addWidget(cat_header);
+      layout_columns_->addWidget(cat_list);
+
+      category_headers_.push_back(cat_header);
+      category_lists_.push_back(cat_list);
+
+      cat_list->update_dynamic_height();
+    }
+
+    layout_columns_->addStretch();
+    reflow_columns();
+  }
+
+  void reflow_columns() {
+    for (auto* list : category_lists_) {
+      if (list && list->isVisible()) {
+        list->update_dynamic_height();
+      }
+    }
+  }
+
+  void start_item_drag(QTreeWidgetItem* item, QWidget* source) {
+    if (!item) return;
+
+    const int type = item->data(0, Qt::UserRole).toInt();
+    if (type == static_cast<int>(StencilItemType::ShapePolygonTool) ||
+        type == static_cast<int>(StencilItemType::ToolConnector) ||
+        type == static_cast<int>(StencilItemType::ToolAutoArrow)) {
+      return;
+    }
+
+    const QString title = item->text(0);
+    QByteArray item_data;
+
+    if (item->data(0, Qt::UserRole + 6).isValid()) {
+      item_data = item->data(0, Qt::UserRole + 6).toByteArray();
+    } else {
+      const int param = item->data(0, Qt::UserRole + 1).toInt();
+      const QString custom_name = item->data(0, Qt::UserRole + 2).toString();
+
+      renderer::ShapePlacementTemplate tmpl = template_from_stencil_data(type, param, custom_name);
+      if (tmpl.name.empty() && !title.isEmpty()) {
+        tmpl.name = title.toStdString();
+      }
+      if (item->data(0, Qt::UserRole + 4).isValid()) {
+        const QPointF pt = item->data(0, Qt::UserRole + 4).toPointF();
+        tmpl.anchor_point = {pt.x(), pt.y()};
+      }
+      if (item->data(0, Qt::UserRole + 5).isValid()) {
+        const QPointF pt = item->data(0, Qt::UserRole + 5).toPointF();
+        tmpl.resize_point = {pt.x(), pt.y()};
+      }
+      item_data = renderer::serialize_placement_template(tmpl);
+    }
+
+    auto* mime = new QMimeData();
+    mime->setData("application/x-madi-stencil", item_data);
+    mime->setData("application/x-madi-diagram-shape", item_data);
+    mime->setText(title);
+
+    auto* drag = new QDrag(source);
+    drag->setMimeData(mime);
+
+    const int two_lines = compute_two_lines_height();
+    QPixmap pix = item->icon(0).pixmap(two_lines, two_lines);
+    if (!pix.isNull()) {
+      drag->setPixmap(pix);
+      drag->setHotSpot(QPoint(pix.width() / 2, pix.height() / 2));
+    }
+    drag->exec(Qt::CopyAction | Qt::MoveAction);
+  }
+
+protected:
+  void resizeEvent(QResizeEvent* event) override {
+    QDockWidget::resizeEvent(event);
+    reflow_columns();
+  }
+
 private:
   QTreeWidgetItem* find_or_create_category(const QString& cat_name) {
     for (int i = 0; i < tree_->topLevelItemCount(); ++i) {
@@ -686,12 +1180,14 @@ private:
     QFont bold_font = new_cat->font(0);
     bold_font.setBold(true);
     new_cat->setFont(0, bold_font);
+    sync_columns_view();
     return new_cat;
   }
 
   void populate_stencils() {
     tree_->clear();
     populate_builtin_stencils();
+    sync_columns_view();
   }
 
   void populate_builtin_stencils() {
@@ -1104,9 +1600,9 @@ public:
     canvas_->start_shape_placement(tmpl);
   }
 
-private:
   void filter_items(const QString& filter_text) {
     const QString text = filter_text.trimmed();
+    // 1. Filter tree
     for (int i = 0; i < tree_->topLevelItemCount(); ++i) {
       auto* cat = tree_->topLevelItem(i);
       bool cat_visible = false;
@@ -1119,18 +1615,40 @@ private:
       cat->setHidden(!cat_visible);
       if (!text.isEmpty() && cat_visible) cat->setExpanded(true);
     }
+
+    // 2. Filter column lists
+    for (size_t idx = 0; idx < category_lists_.size(); ++idx) {
+      auto* list = category_lists_[idx];
+      auto* header = (idx < category_headers_.size()) ? category_headers_[idx] : nullptr;
+      if (!list) continue;
+      int visible_items = 0;
+      for (int r = 0; r < list->count(); ++r) {
+        auto* item = list->item(r);
+        const bool match = text.isEmpty() || item->text().contains(text, Qt::CaseInsensitive);
+        item->setHidden(!match);
+        if (match) visible_items++;
+      }
+      const bool show_cat = (visible_items > 0);
+      list->setVisible(show_cat);
+      if (header) header->setVisible(show_cat);
+      if (show_cat) list->update_dynamic_height();
+    }
   }
 
   void show_context_menu(const QPoint& pt) {
     auto* item = tree_->itemAt(pt);
+    show_context_menu_for_item(item, tree_->mapToGlobal(pt));
+  }
+
+  void show_context_menu_for_item(QTreeWidgetItem* item, const QPoint& global_pt) {
     QMenu menu(this);
     if (item && item->parent() == nullptr) {
       if (is_category_builtin(item)) {
-        auto* act_prot = menu.addAction("🔒 Built-in Section (Protected)");
+        auto* act_prot = menu.addAction("🔒 Built-in Category (Non-editable)");
         act_prot->setEnabled(false);
       } else {
-        menu.addAction("✏ Rename Section...", this, [this, item]() { prompt_rename_section(item); });
-        menu.addAction("🗑 Delete Section", this, &StencilLibraryDock::remove_current_selected);
+        menu.addAction("✏ Rename Category...", this, [this, item]() { prompt_rename_section(item); });
+        menu.addAction("🗑 Delete Category", this, &StencilLibraryDock::remove_current_selected);
       }
       menu.addSeparator();
     } else if (item && item->parent() != nullptr) {
@@ -1143,7 +1661,8 @@ private:
       }
       menu.addSeparator();
     }
-    menu.addAction("📁 New Section...", this, &StencilLibraryDock::prompt_new_section_dialog);
+    menu.addAction("📁 New Category...", this, &StencilLibraryDock::prompt_new_section_dialog);
+    menu.addAction("📦 Load Stencil Package...", this, &StencilLibraryDock::prompt_load_package_dialog);
     menu.addAction("📐 Add Custom Shape / N-gon...", this, &StencilLibraryDock::prompt_custom_shape_dialog);
     auto* act_sel = menu.addAction("⭐ Add Selected from Canvas", this, &StencilLibraryDock::add_from_selection);
     if (!canvas_ || canvas_->selected_count() == 0) {
@@ -1151,17 +1670,36 @@ private:
     }
     menu.addSeparator();
     menu.addAction("🔄 Restore Default Shapes", this, &StencilLibraryDock::reset_default_shapes);
-    menu.exec(tree_->mapToGlobal(pt));
+    menu.exec(global_pt);
   }
 
+  void show_category_header_context_menu(QTreeWidgetItem* cat, const QPoint& global_pt) {
+    show_context_menu_for_item(cat, global_pt);
+  }
+
+private:
   QLineEdit* search_edit_{nullptr};
+  QToolButton* btn_view_mode_{nullptr};
+  QStackedWidget* view_stack_{nullptr};
+  QScrollArea* scroll_columns_{nullptr};
+  QWidget* widget_columns_{nullptr};
+  QVBoxLayout* layout_columns_{nullptr};
+  std::vector<StencilCategoryHeader*> category_headers_;
+  std::vector<StencilCategoryListWidget*> category_lists_;
   StencilTreeWidget* tree_{nullptr};
   QPushButton* btn_add_{nullptr};
+  QPushButton* btn_add_category_{nullptr};
+  QPushButton* btn_load_package_{nullptr};
   QPushButton* btn_remove_{nullptr};
   QPushButton* btn_insert_{nullptr};
   renderer::CanvasWidget* canvas_{nullptr};
   QColor current_fg_{QColor("#CDD6F4")};
+  ViewMode view_mode_{ViewMode::Columns};
 };
+
+// ==============================================================================
+// Inline Implementations of StencilTreeWidget Events
+// ==============================================================================
 
 inline void StencilTreeWidget::mouseMoveEvent(QMouseEvent* event) {
   if (!(event->buttons() & Qt::LeftButton)) {
@@ -1179,60 +1717,13 @@ inline void StencilTreeWidget::mouseMoveEvent(QMouseEvent* event) {
     return;
   }
 
-  const int type = item->data(0, Qt::UserRole).toInt();
-  if (type == static_cast<int>(StencilLibraryDock::StencilItemType::ShapePolygonTool) ||
-      type == static_cast<int>(StencilLibraryDock::StencilItemType::ToolConnector) ||
-      type == static_cast<int>(StencilLibraryDock::StencilItemType::ToolAutoArrow)) {
-    QTreeWidget::mouseMoveEvent(event);
-    return;
+  if (dock_) {
+    dock_->start_item_drag(item, this);
   }
-
-  const QString title = item->text(0);
-  QByteArray item_data;
-
-  if (item->data(0, Qt::UserRole + 6).isValid()) {
-    item_data = item->data(0, Qt::UserRole + 6).toByteArray();
-  } else {
-    const int param = item->data(0, Qt::UserRole + 1).toInt();
-    const QString custom_name = item->data(0, Qt::UserRole + 2).toString();
-
-    renderer::ShapePlacementTemplate tmpl = StencilLibraryDock::template_from_stencil_data(type, param, custom_name);
-    if (tmpl.name.empty() && !title.isEmpty()) {
-      tmpl.name = title.toStdString();
-    }
-    if (item->data(0, Qt::UserRole + 4).isValid()) {
-      const QPointF pt = item->data(0, Qt::UserRole + 4).toPointF();
-      tmpl.anchor_point = {pt.x(), pt.y()};
-    }
-    if (item->data(0, Qt::UserRole + 5).isValid()) {
-      const QPointF pt = item->data(0, Qt::UserRole + 5).toPointF();
-      tmpl.resize_point = {pt.x(), pt.y()};
-    }
-    item_data = renderer::serialize_placement_template(tmpl);
-  }
-
-  auto* mime = new QMimeData();
-  mime->setData("application/x-madi-stencil", item_data);
-  mime->setData("application/x-madi-diagram-shape", item_data);
-  mime->setData("application/x-madi-stencil", item_data);
-  mime->setData("application/x-madi-diagram-shape", item_data);
-  mime->setText(title);
-
-  auto* drag = new QDrag(this);
-  drag->setMimeData(mime);
-
-  QPixmap pix = item->icon(0).pixmap(32, 32);
-  if (!pix.isNull()) {
-    drag->setPixmap(pix);
-    drag->setHotSpot(QPoint(pix.width() / 2, pix.height() / 2));
-  }
-  drag->exec(Qt::CopyAction | Qt::MoveAction);
 }
 
 inline void StencilTreeWidget::dragEnterEvent(QDragEnterEvent* event) {
   if (event->mimeData()->hasFormat("application/x-madi-stencil") ||
-      event->mimeData()->hasFormat("application/x-madi-diagram-shape") ||
-      event->mimeData()->hasFormat("application/x-madi-stencil") ||
       event->mimeData()->hasFormat("application/x-madi-diagram-shape") ||
       event->mimeData()->hasText()) {
     event->acceptProposedAction();
@@ -1244,8 +1735,6 @@ inline void StencilTreeWidget::dragEnterEvent(QDragEnterEvent* event) {
 inline void StencilTreeWidget::dragMoveEvent(QDragMoveEvent* event) {
   if (event->mimeData()->hasFormat("application/x-madi-stencil") ||
       event->mimeData()->hasFormat("application/x-madi-diagram-shape") ||
-      event->mimeData()->hasFormat("application/x-madi-stencil") ||
-      event->mimeData()->hasFormat("application/x-madi-diagram-shape") ||
       event->mimeData()->hasText()) {
     event->acceptProposedAction();
   } else {
@@ -1255,16 +1744,10 @@ inline void StencilTreeWidget::dragMoveEvent(QDragMoveEvent* event) {
 
 inline void StencilTreeWidget::dropEvent(QDropEvent* event) {
   if (event->mimeData()->hasFormat("application/x-madi-stencil") ||
-      event->mimeData()->hasFormat("application/x-madi-diagram-shape") ||
-      event->mimeData()->hasFormat("application/x-madi-stencil") ||
       event->mimeData()->hasFormat("application/x-madi-diagram-shape")) {
     const QByteArray bytes = event->mimeData()->hasFormat("application/x-madi-stencil")
         ? event->mimeData()->data("application/x-madi-stencil")
-        : (event->mimeData()->hasFormat("application/x-madi-diagram-shape")
-            ? event->mimeData()->data("application/x-madi-diagram-shape")
-            : (event->mimeData()->hasFormat("application/x-madi-stencil")
-                ? event->mimeData()->data("application/x-madi-stencil")
-                : event->mimeData()->data("application/x-madi-diagram-shape")));
+        : event->mimeData()->data("application/x-madi-diagram-shape");
     renderer::ShapePlacementTemplate tmpl;
     if (renderer::deserialize_placement_template(bytes, tmpl)) {
       auto* target = itemAt(event->position().toPoint());
@@ -1276,6 +1759,50 @@ inline void StencilTreeWidget::dropEvent(QDropEvent* event) {
     }
   }
   QTreeWidget::dropEvent(event);
+}
+
+// ==============================================================================
+// Inline Implementations of StencilCategoryListWidget Events
+// ==============================================================================
+
+inline void StencilCategoryListWidget::mouseMoveEvent(QMouseEvent* event) {
+  if (!(event->buttons() & Qt::LeftButton)) {
+    QListWidget::mouseMoveEvent(event);
+    return;
+  }
+  if ((event->pos() - drag_start_pos_).manhattanLength() < QApplication::startDragDistance()) {
+    QListWidget::mouseMoveEvent(event);
+    return;
+  }
+
+  auto* list_item = itemAt(drag_start_pos_);
+  if (!list_item) {
+    QListWidget::mouseMoveEvent(event);
+    return;
+  }
+
+  auto* tree_item = static_cast<QTreeWidgetItem*>(list_item->data(Qt::UserRole).value<void*>());
+  if (tree_item && dock_) {
+    dock_->start_item_drag(tree_item, this);
+  }
+}
+
+inline void StencilCategoryListWidget::contextMenuEvent(QContextMenuEvent* event) {
+  auto* list_item = itemAt(event->pos());
+  QTreeWidgetItem* tree_item = list_item ? static_cast<QTreeWidgetItem*>(list_item->data(Qt::UserRole).value<void*>()) : tree_cat_;
+  if (dock_) {
+    dock_->show_context_menu_for_item(tree_item, event->globalPos());
+  }
+}
+
+// ==============================================================================
+// Inline Implementation of StencilCategoryHeader Context Menu
+// ==============================================================================
+
+inline void StencilCategoryHeader::contextMenuEvent(QContextMenuEvent* event) {
+  if (dock_ && list_widget_ && list_widget_->tree_category()) {
+    dock_->show_category_header_context_menu(list_widget_->tree_category(), event->globalPos());
+  }
 }
 
 } // namespace madi::gui

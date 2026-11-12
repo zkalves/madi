@@ -715,6 +715,9 @@ std::string StorageEngine::serialize_json(const core::GraphModel& graph,
     ss << "      \"source_port\": " << edge->source_port << ",\n";
     ss << "      \"target_node\": " << edge->target_node << ",\n";
     ss << "      \"target_port\": " << edge->target_port << ",\n";
+    ss << "      \"source_arrowhead\": " << json_escape(edge->source_arrowhead) << ",\n";
+    ss << "      \"arrowhead\": " << json_escape(edge->arrowhead) << ",\n";
+    ss << "      \"branches_aligned\": " << (edge->branches_aligned ? "true" : "false") << ",\n";
     ss << "      \"routing_style\": " << static_cast<int>(edge->routing_style);
 
     if (!edge->waypoints.empty()) {
@@ -723,6 +726,54 @@ std::string StorageEngine::serialize_json(const core::GraphModel& graph,
         const auto& wp = edge->waypoints[i];
         ss << "        [" << format_double(wp.x) << ", " << format_double(wp.y) << "]";
         if (i + 1 < edge->waypoints.size()) ss << ",";
+        ss << "\n";
+      }
+      ss << "      ]";
+    }
+
+    if (!edge->extra_sources.empty()) {
+      ss << ",\n      \"extra_sources\": [\n";
+      for (size_t i = 0; i < edge->extra_sources.size(); ++i) {
+        const auto& bs = edge->extra_sources[i];
+        ss << "        {\n";
+        ss << "          \"source_node\": " << bs.source_node << ",\n";
+        ss << "          \"source_port\": " << bs.source_port << ",\n";
+        ss << "          \"arrowhead\": " << json_escape(bs.arrowhead);
+        if (!bs.waypoints.empty()) {
+          ss << ",\n          \"waypoints\": [\n";
+          for (size_t w = 0; w < bs.waypoints.size(); ++w) {
+            ss << "            [" << format_double(bs.waypoints[w].x) << ", " << format_double(bs.waypoints[w].y) << "]";
+            if (w + 1 < bs.waypoints.size()) ss << ",";
+            ss << "\n";
+          }
+          ss << "          ]";
+        }
+        ss << "\n        }";
+        if (i + 1 < edge->extra_sources.size()) ss << ",";
+        ss << "\n";
+      }
+      ss << "      ]";
+    }
+
+    if (!edge->extra_destinations.empty()) {
+      ss << ",\n      \"extra_destinations\": [\n";
+      for (size_t i = 0; i < edge->extra_destinations.size(); ++i) {
+        const auto& bt = edge->extra_destinations[i];
+        ss << "        {\n";
+        ss << "          \"target_node\": " << bt.target_node << ",\n";
+        ss << "          \"target_port\": " << bt.target_port << ",\n";
+        ss << "          \"arrowhead\": " << json_escape(bt.arrowhead);
+        if (!bt.waypoints.empty()) {
+          ss << ",\n          \"waypoints\": [\n";
+          for (size_t w = 0; w < bt.waypoints.size(); ++w) {
+            ss << "            [" << format_double(bt.waypoints[w].x) << ", " << format_double(bt.waypoints[w].y) << "]";
+            if (w + 1 < bt.waypoints.size()) ss << ",";
+            ss << "\n";
+          }
+          ss << "          ]";
+        }
+        ss << "\n        }";
+        if (i + 1 < edge->extra_destinations.size()) ss << ",";
         ss << "\n";
       }
       ss << "      ]";
@@ -881,6 +932,43 @@ StorageResult StorageEngine::deserialize_json(std::string_view json_text,
           }
         }
       }
+      if (const auto* v = item.find("source_arrowhead")) edge.source_arrowhead = v->as_string();
+      if (const auto* v = item.find("arrowhead")) edge.arrowhead = v->as_string();
+      if (const auto* v = item.find("branches_aligned")) edge.branches_aligned = v->as_bool();
+      if (const auto* v = item.find("extra_sources"); v && v->is_array()) {
+        for (const auto& s_item : v->arr_val) {
+          if (!s_item.is_object()) continue;
+          core::BranchSource bs;
+          if (const auto* sv = s_item.find("source_node")) bs.source_node = static_cast<core::NodeId>(sv->as_int());
+          if (const auto* sv = s_item.find("source_port")) bs.source_port = static_cast<core::PortId>(sv->as_int());
+          if (const auto* sv = s_item.find("arrowhead")) bs.arrowhead = sv->as_string();
+          if (const auto* sv = s_item.find("waypoints"); sv && sv->is_array()) {
+            for (const auto& wp_item : sv->arr_val) {
+              if (wp_item.is_array() && wp_item.arr_val.size() >= 2) {
+                bs.waypoints.push_back({wp_item.arr_val[0].as_double(), wp_item.arr_val[1].as_double()});
+              }
+            }
+          }
+          edge.extra_sources.push_back(std::move(bs));
+        }
+      }
+      if (const auto* v = item.find("extra_destinations"); v && v->is_array()) {
+        for (const auto& d_item : v->arr_val) {
+          if (!d_item.is_object()) continue;
+          core::BranchTarget bt;
+          if (const auto* dv = d_item.find("target_node")) bt.target_node = static_cast<core::NodeId>(dv->as_int());
+          if (const auto* dv = d_item.find("target_port")) bt.target_port = static_cast<core::PortId>(dv->as_int());
+          if (const auto* dv = d_item.find("arrowhead")) bt.arrowhead = dv->as_string();
+          if (const auto* dv = d_item.find("waypoints"); dv && dv->is_array()) {
+            for (const auto& wp_item : dv->arr_val) {
+              if (wp_item.is_array() && wp_item.arr_val.size() >= 2) {
+                bt.waypoints.push_back({wp_item.arr_val[0].as_double(), wp_item.arr_val[1].as_double()});
+              }
+            }
+          }
+          edge.extra_destinations.push_back(std::move(bt));
+        }
+      }
       out_graph.add_edge(std::move(edge));
     }
   }
@@ -999,6 +1087,9 @@ std::string StorageEngine::serialize_yaml(const core::GraphModel& graph,
     ss << "    source_port: " << edge->source_port << "\n";
     ss << "    target_node: " << edge->target_node << "\n";
     ss << "    target_port: " << edge->target_port << "\n";
+    ss << "    source_arrowhead: " << yaml_escape(edge->source_arrowhead) << "\n";
+    ss << "    arrowhead: " << yaml_escape(edge->arrowhead) << "\n";
+    ss << "    branches_aligned: " << (edge->branches_aligned ? "true" : "false") << "\n";
     ss << "    routing_style: " << static_cast<int>(edge->routing_style) << "\n";
 
     if (!edge->waypoints.empty()) {
@@ -1240,6 +1331,12 @@ StorageResult StorageEngine::deserialize_yaml(std::string_view yaml_text,
           current_edge.target_port = static_cast<core::PortId>(std::stoul(trim(trimmed_line.substr(12))));
         } else if (trimmed_line.starts_with("routing_style:")) {
           current_edge.routing_style = parse_routing_style_str(trim(trimmed_line.substr(14)));
+        } else if (trimmed_line.starts_with("source_arrowhead:")) {
+          current_edge.source_arrowhead = unquote(trim(trimmed_line.substr(17)));
+        } else if (trimmed_line.starts_with("arrowhead:")) {
+          current_edge.arrowhead = unquote(trim(trimmed_line.substr(10)));
+        } else if (trimmed_line.starts_with("branches_aligned:")) {
+          current_edge.branches_aligned = (trim(trimmed_line.substr(17)) == "true");
         } else if (trimmed_line == "waypoints:") {
           edge_sub = EdgeSub::Waypoints;
         } else if (edge_sub == EdgeSub::Waypoints && trimmed_line.starts_with("- [")) {

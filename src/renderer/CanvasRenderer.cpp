@@ -402,7 +402,7 @@ void CanvasRenderer::draw_edge(const core::Edge& edge, const RenderContext& ctx,
   }
   const uint32_t color = edge.selected ? style.selection_border : effective_wire;
 
-  auto draw_segment_list = [&](const std::vector<core::Vec2d>& wpts, bool is_branch) {
+  auto draw_segment_list = [&](const std::vector<core::Vec2d>& wpts, bool is_branch, bool draw_start_arrow = false, bool draw_end_arrow = true) {
     if (wpts.size() < 2) return;
     for (size_t i = 0; i + 1 < wpts.size(); ++i) {
       const core::Vec2d p1 = ctx.world_to_screen.map_point(wpts[i]);
@@ -431,36 +431,17 @@ void CanvasRenderer::draw_edge(const core::Edge& edge, const RenderContext& ctx,
       }
     }
 
-    // Draw connection dot (anchor or branch junction ball)
-    const core::Vec2d p_start = ctx.world_to_screen.map_point(wpts.front());
-    const int cx_s = static_cast<int>(std::round(p_start.x));
-    const int cy_s = static_cast<int>(std::round(p_start.y));
-    const int r_dot = is_branch ? 4 : 3;
-    for (int dy = -r_dot; dy <= r_dot; ++dy) {
-      for (int dx = -r_dot; dx <= r_dot; ++dx) {
-        if (dx * dx + dy * dy <= r_dot * r_dot) {
-          const int px = cx_s + dx;
-          const int py = cy_s + dy;
-          if (px >= 0 && px < width_ && py >= 0 && py < height_) {
-            software_framebuffer_[static_cast<size_t>(py) * width_ + px] = color;
-          }
-        }
-      }
-    }
-
-    // Draw terminal arrowhead at destination endpoint
-    const core::Vec2d p_end = ctx.world_to_screen.map_point(wpts.back());
-    const core::Vec2d p_penult = ctx.world_to_screen.map_point(wpts[wpts.size() - 2]);
-    core::Vec2d d = p_end - p_penult;
-    const double len = d.length();
-    if (len > 1e-3) {
+    auto draw_arrow_head = [&](const core::Vec2d& p_prev, const core::Vec2d& p_tip) {
+      core::Vec2d d = p_tip - p_prev;
+      const double len = d.length();
+      if (len < 1e-3) return;
       d = d / len;
       const core::Vec2d norm{-d.y, d.x};
       const double arrow_len = 10.0;
       const double arrow_half_w = 5.0;
 
-      const core::Vec2d tip = p_end;
-      const core::Vec2d base = p_end - d * arrow_len;
+      const core::Vec2d tip = p_tip;
+      const core::Vec2d base = p_tip - d * arrow_len;
       const core::Vec2d w1 = base + norm * arrow_half_w;
       const core::Vec2d w2 = base - norm * arrow_half_w;
 
@@ -487,15 +468,46 @@ void CanvasRenderer::draw_edge(const core::Edge& edge, const RenderContext& ctx,
           }
         }
       }
+    };
+
+    if (draw_start_arrow) {
+      draw_arrow_head(ctx.world_to_screen.map_point(wpts[1]), ctx.world_to_screen.map_point(wpts.front()));
+    } else {
+      // Draw connection dot (anchor or branch junction ball)
+      const core::Vec2d p_start = ctx.world_to_screen.map_point(wpts.front());
+      const int cx_s = static_cast<int>(std::round(p_start.x));
+      const int cy_s = static_cast<int>(std::round(p_start.y));
+      const int r_dot = is_branch ? 4 : 3;
+      for (int dy = -r_dot; dy <= r_dot; ++dy) {
+        for (int dx = -r_dot; dx <= r_dot; ++dx) {
+          if (dx * dx + dy * dy <= r_dot * r_dot) {
+            const int px = cx_s + dx;
+            const int py = cy_s + dy;
+            if (px >= 0 && px < width_ && py >= 0 && py < height_) {
+              software_framebuffer_[static_cast<size_t>(py) * width_ + px] = color;
+            }
+          }
+        }
+      }
+    }
+
+    // Draw terminal arrowhead at destination endpoint if enabled
+    if (draw_end_arrow) {
+      draw_arrow_head(ctx.world_to_screen.map_point(wpts[wpts.size() - 2]), ctx.world_to_screen.map_point(wpts.back()));
     }
   };
 
   // Draw primary trunk
-  draw_segment_list(edge.waypoints, false);
+  draw_segment_list(edge.waypoints, false, edge.has_source_arrow(), edge.has_target_arrow());
 
-  // Draw multipoint destination branches
+  // Draw multipoint source branches (multiple inputs)
+  for (const auto& br : edge.extra_sources) {
+    draw_segment_list(br.waypoints, true, !br.arrowhead.empty() && br.arrowhead != "none", false);
+  }
+
+  // Draw multipoint destination branches (multiple outputs)
   for (const auto& br : edge.extra_destinations) {
-    draw_segment_list(br.waypoints, true);
+    draw_segment_list(br.waypoints, true, false, !br.arrowhead.empty() && br.arrowhead != "none");
   }
 }
 

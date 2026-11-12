@@ -21,6 +21,7 @@
 #include "madi/gui/StencilLibraryDock.hpp"
 #include "madi/gui/SymbolEditorDialog.hpp"
 #include "madi/gui/ThemeManager.hpp"
+#include "madi/gui/ToolLibraryDock.hpp"
 #include "madi/io/DrawioParser.hpp"
 #include "madi/io/StorageEngine.hpp"
 #include "madi/renderer/CanvasWidget.hpp"
@@ -354,6 +355,12 @@ public:
     connect(canvas_, &madi::renderer::CanvasWidget::diagram_modified,
             this, [this]() { on_model_changed(); });
 
+    connect(canvas_, &madi::renderer::CanvasWidget::edge_arrowhead_changed,
+            this, [this](madi::core::EdgeId) {
+      update_inspector();
+      on_model_changed();
+    });
+
     // Seed default starter diagram
     suppress_model_modified_ = true;
     setup_sample_diagram();
@@ -404,7 +411,8 @@ public:
   [[nodiscard]] QLabel* status_hierarchy_label() const noexcept { return status_hierarchy_label_; }
   [[nodiscard]] QPushButton* btn_pop_scope_status() const noexcept { return btn_pop_scope_status_; }
   [[nodiscard]] QToolBar* formatting_toolbar() const noexcept { return toolbar_format_; }
-  [[nodiscard]] QDockWidget* dock_tools() const noexcept { return dock_palette_; }
+  [[nodiscard]] ToolLibraryDock* dock_tools() const noexcept { return dock_palette_; }
+  [[nodiscard]] ToolLibraryDock* tool_dock() const noexcept { return dock_palette_; }
   [[nodiscard]] StencilLibraryDock* dock_shapes() const noexcept { return stencil_dock_; }
   [[nodiscard]] QDoubleSpinBox* inspector_x() const noexcept { return inspector_x_; }
   [[nodiscard]] QDoubleSpinBox* inspector_y() const noexcept { return inspector_y_; }
@@ -2523,224 +2531,68 @@ private:
   }
 
   void create_docks() {
-    // 1. Tools Dock (Converted from Figures & Blocks Palette)
-    dock_palette_ = new QDockWidget("Tools", this);
+    // 1. Tools Dock (Converted to ToolLibraryDock matching StencilLibraryDock parity)
+    dock_palette_ = new ToolLibraryDock(this);
     dock_palette_->setObjectName("DockTools");
+    dock_palette_->set_canvas(canvas_);
+    dock_palette_->set_command_history(command_history_.get());
     dock_palette_->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-    auto* palette_widget = new QWidget(dock_palette_);
-    auto* palette_layout = new QVBoxLayout(palette_widget);
-    palette_layout->setSpacing(4);
-    palette_layout->setContentsMargins(4, 4, 4, 4);
-
-    auto make_palette_btn = [this](IconFactory::IconType itype, const QString& tooltip, auto click_fn) {
-      auto* btn = new QToolButton(this);
-      btn->setToolButtonStyle(Qt::ToolButtonIconOnly);
-      btn->setIconSize(QSize(20, 20));
-      btn->setFixedSize(28, 28);
-      btn->setToolTip(tooltip);
-      palette_tool_buttons_.emplace_back(btn, itype);
-      connect(btn, &QToolButton::clicked, this, click_fn);
-      return btn;
-    };
-
-    // Category 1: Interaction & Selection Tools (Compact Selector)
-    auto* lbl_modes = new QLabel("<b>Interaction Tools:</b>", this);
-    lbl_modes->setStyleSheet("font-size: 11px;");
-    palette_layout->addWidget(lbl_modes);
-
-    auto* grid_modes = new QGridLayout();
-    grid_modes->setSpacing(3);
-
-    btn_palette_select_ = make_palette_btn(IconFactory::IconType::Select, "Select & Transform (S)\nPick, move, resize, and edit items on canvas", [this]() {
-      canvas_->set_tool_mode(madi::renderer::ToolMode::Select);
-    });
-    btn_palette_select_->setCheckable(true);
-    btn_palette_select_->setChecked(true);
-
-    btn_palette_wire_ = make_palette_btn(IconFactory::IconType::Wire, "Orthogonal Net Connector (C)\nRoute orthogonal obstacle-avoiding wires", [this]() {
-      canvas_->set_tool_mode(madi::renderer::ToolMode::AddConnector);
-    });
-    btn_palette_wire_->setCheckable(true);
-
-    btn_palette_pan_ = make_palette_btn(IconFactory::IconType::Pan, "Pan Canvas (Space+Drag)\nHold Space and drag with mouse to pan", [this]() {
-      statusBar()->showMessage("Pan Tool: Click and drag canvas or hold Spacebar to pan viewport.", 3000);
-    });
-
-    btn_palette_del_ = make_palette_btn(IconFactory::IconType::Delete, "Delete Selected (Del)\nRemove selected figures and connections", [this]() {
-      canvas_->delete_selected();
-    });
-    btn_palette_del_->setEnabled(false);
-
-    grid_modes->addWidget(btn_palette_select_, 0, 0);
-    grid_modes->addWidget(btn_palette_wire_, 0, 1);
-    grid_modes->addWidget(btn_palette_pan_, 0, 2);
-    grid_modes->addWidget(btn_palette_del_, 0, 3);
-    palette_layout->addLayout(grid_modes);
-
-    palette_layout->addSpacing(3);
-
-    // Category 2: Figure Operations (Boolean & Grouping)
-    auto* lbl_ops = new QLabel("<b>Boolean & Combine:</b>", this);
-    lbl_ops->setStyleSheet("font-size: 11px;");
-    palette_layout->addWidget(lbl_ops);
-
-    auto* grid_ops = new QGridLayout();
-    grid_ops->setSpacing(3);
-
-    btn_dock_merge_ = make_palette_btn(IconFactory::IconType::BooleanUnion, "Union / OR (Merge) (Ctrl+G)\nCombine multiple figures into a unified polygon", [this]() {
-      canvas_->merge_selected_figures();
-    });
-    btn_dock_merge_->setEnabled(false);
-
-    btn_dock_intersect_ = make_palette_btn(IconFactory::IconType::BooleanIntersect, "Intersection (AND) (Ctrl+Shift+I)\nKeep overlapping region of figures", [this]() {
-      canvas_->boolean_combine_selected(madi::core::BooleanOp::Intersection);
-    });
-    btn_dock_intersect_->setEnabled(false);
-
-    btn_dock_subtract_ = make_palette_btn(IconFactory::IconType::BooleanSubtract, "Subtract / Difference (Ctrl+Shift+D)\nCut subsequent figures out of first figure", [this]() {
-      canvas_->boolean_combine_selected(madi::core::BooleanOp::Difference);
-    });
-    btn_dock_subtract_->setEnabled(false);
-
-    btn_dock_xor_ = make_palette_btn(IconFactory::IconType::BooleanXor, "XOR / Symmetric Difference (Ctrl+Shift+X)\nKeep regions that do not overlap", [this]() {
-      canvas_->boolean_combine_selected(madi::core::BooleanOp::Xor);
-    });
-    btn_dock_xor_->setEnabled(false);
-
-    btn_dock_split_ = make_palette_btn(IconFactory::IconType::SplitFigure, "Split Selected Figure (Ctrl+Shift+G)\nUngroup composite figure into elements", [this]() {
-      canvas_->split_selected_figure();
-    });
-    btn_dock_split_->setEnabled(false);
-
-    grid_ops->addWidget(btn_dock_merge_, 0, 0);
-    grid_ops->addWidget(btn_dock_intersect_, 0, 1);
-    grid_ops->addWidget(btn_dock_subtract_, 0, 2);
-    grid_ops->addWidget(btn_dock_xor_, 0, 3);
-    grid_ops->addWidget(btn_dock_split_, 1, 0);
-    palette_layout->addLayout(grid_ops);
-
-    palette_layout->addSpacing(3);
-
-    // Category 3: Hierarchy & Scope Tools
-    auto* lbl_hier = new QLabel("<b>Hierarchy & Scope:</b>", this);
-    lbl_hier->setStyleSheet("font-size: 11px;");
-    palette_layout->addWidget(lbl_hier);
-
-    auto* grid_hier = new QGridLayout();
-    grid_hier->setSpacing(3);
-
-    btn_dock_down_ = make_palette_btn(IconFactory::IconType::DrillDown, "Drill Down: Descend into internal view (Enter)", [this]() {
-      canvas_->drill_down_selected();
-    });
-    btn_dock_down_->setEnabled(false);
-
-    btn_dock_up_ = make_palette_btn(IconFactory::IconType::PopScope, "Up to Parent: Ascend to parent diagram level (Esc)", [this]() {
-      canvas_->pop_hierarchy_scope();
-    });
-    btn_dock_up_->setEnabled(false);
-
-    grid_hier->addWidget(btn_dock_down_, 0, 0);
-    grid_hier->addWidget(btn_dock_up_, 0, 1);
-    palette_layout->addLayout(grid_hier);
-
-    palette_layout->addSpacing(3);
-
-    // Category 4: Stacking & Arrangement
-    auto* lbl_stack = new QLabel("<b>Stacking & Order:</b>", this);
-    lbl_stack->setStyleSheet("font-size: 11px;");
-    palette_layout->addWidget(lbl_stack);
-
-    auto* grid_stack = new QGridLayout();
-    grid_stack->setSpacing(3);
-
-    btn_dock_front_ = make_palette_btn(IconFactory::IconType::BringToFront, "Bring to Front (Ctrl+Shift+])", [this]() {
-      canvas_->bring_to_front_selected();
-    });
-    btn_dock_front_->setEnabled(false);
-
-    btn_dock_forward_ = make_palette_btn(IconFactory::IconType::BringForward, "Bring Forward (Ctrl+])", [this]() {
-      canvas_->bring_forward_selected();
-    });
-    btn_dock_forward_->setEnabled(false);
-
-    btn_dock_backward_ = make_palette_btn(IconFactory::IconType::SendBackward, "Send Backward (Ctrl+[)", [this]() {
-      canvas_->send_backward_selected();
-    });
-    btn_dock_backward_->setEnabled(false);
-
-    btn_dock_back_ = make_palette_btn(IconFactory::IconType::SendToBack, "Send to Back (Ctrl+Shift+[)", [this]() {
-      canvas_->send_to_back_selected();
-    });
-    btn_dock_back_->setEnabled(false);
-
-    grid_stack->addWidget(btn_dock_front_, 0, 0);
-    grid_stack->addWidget(btn_dock_forward_, 0, 1);
-    grid_stack->addWidget(btn_dock_backward_, 0, 2);
-    grid_stack->addWidget(btn_dock_back_, 0, 3);
-    palette_layout->addLayout(grid_stack);
-
-    palette_layout->addSpacing(3);
-
-    // Category 5: Rotate & Snapping
-    auto* lbl_rot = new QLabel("<b>Rotate & Snap:</b>", this);
-    lbl_rot->setStyleSheet("font-size: 11px;");
-    palette_layout->addWidget(lbl_rot);
-
-    auto* grid_rot = new QGridLayout();
-    grid_rot->setSpacing(3);
-
-    btn_dock_rot_ccw_ = make_palette_btn(IconFactory::IconType::RotateCCW, "Rotate 90° Counter-Clockwise (Ctrl+Shift+R)", [this]() {
-      if (canvas_) canvas_->rotate_selected(-90.0);
-    });
-    btn_dock_rot_ccw_->setEnabled(false);
-
-    btn_dock_rot_cw_ = make_palette_btn(IconFactory::IconType::RotateCW, "Rotate 90° Clockwise (Ctrl+R)", [this]() {
-      if (canvas_) canvas_->rotate_selected(90.0);
-    });
-    btn_dock_rot_cw_->setEnabled(false);
-
-    btn_dock_angle_snap_ = make_palette_btn(IconFactory::IconType::AngleSnap, "Toggle Angle Snapping (Alt+A)\nSnaps figure rotation to angular increments", [this]() {
-      if (canvas_) {
-        canvas_->set_angle_snapping_enabled(!canvas_->is_angle_snapping_enabled());
-        update_angle_snap_ui();
-      }
-    });
-    btn_dock_angle_snap_->setCheckable(true);
-    btn_dock_angle_snap_->setChecked(canvas_ ? canvas_->is_angle_snapping_enabled() : true);
-
-    grid_rot->addWidget(btn_dock_rot_ccw_, 0, 0);
-    grid_rot->addWidget(btn_dock_rot_cw_, 0, 1);
-    grid_rot->addWidget(btn_dock_angle_snap_, 0, 2);
-    palette_layout->addLayout(grid_rot);
-
-    palette_layout->addSpacing(3);
-
-    // Category 6: History / Revert
-    auto* lbl_hist = new QLabel("<b>History:</b>", this);
-    lbl_hist->setStyleSheet("font-size: 11px;");
-    palette_layout->addWidget(lbl_hist);
-
-    auto* grid_hist = new QGridLayout();
-    grid_hist->setSpacing(3);
-
-    btn_dock_undo_ = make_palette_btn(IconFactory::IconType::Undo, "Undo (Ctrl+Z)", [this]() {
-      command_history_->undo();
-    });
-    btn_dock_undo_->setEnabled(false);
-
-    btn_dock_redo_ = make_palette_btn(IconFactory::IconType::Redo, "Redo (Ctrl+Y)", [this]() {
-      command_history_->redo();
-    });
-    btn_dock_redo_->setEnabled(false);
-
-    grid_hist->addWidget(btn_dock_undo_, 0, 0);
-    grid_hist->addWidget(btn_dock_redo_, 0, 1);
-    palette_layout->addLayout(grid_hist);
-
-    palette_layout->addStretch();
-    dock_palette_->setWidget(palette_widget);
-    dock_palette_->setMinimumWidth(130);
     addDockWidget(Qt::LeftDockWidgetArea, dock_palette_);
+
+    // Cache pointers for fast inspector enabling and mode toggling
+    btn_palette_select_ = dock_palette_->btn_select();
+    btn_palette_wire_ = dock_palette_->btn_wire();
+    btn_palette_pan_ = dock_palette_->btn_pan();
+    btn_palette_del_ = dock_palette_->btn_delete();
+
+    btn_dock_merge_ = dock_palette_->btn_merge();
+    btn_dock_intersect_ = dock_palette_->btn_intersect();
+    btn_dock_subtract_ = dock_palette_->btn_subtract();
+    btn_dock_xor_ = dock_palette_->btn_xor();
+    btn_dock_split_ = dock_palette_->btn_split();
+
+    btn_dock_down_ = dock_palette_->btn_drill_down();
+    btn_dock_up_ = dock_palette_->btn_pop_scope();
+
+    btn_dock_front_ = dock_palette_->btn_front();
+    btn_dock_forward_ = dock_palette_->btn_forward();
+    btn_dock_backward_ = dock_palette_->btn_backward();
+    btn_dock_back_ = dock_palette_->btn_back();
+
+    btn_dock_rot_ccw_ = dock_palette_->btn_rot_ccw();
+    btn_dock_rot_cw_ = dock_palette_->btn_rot_cw();
+    btn_dock_angle_snap_ = dock_palette_->btn_angle_snap();
+
+    btn_dock_undo_ = dock_palette_->btn_undo();
+    btn_dock_redo_ = dock_palette_->btn_redo();
+
+    if (btn_dock_angle_snap_) {
+      connect(btn_dock_angle_snap_, &QToolButton::clicked, this, [this]() {
+        update_angle_snap_ui();
+      });
+    }
+
+    palette_tool_buttons_.clear();
+    palette_tool_buttons_.emplace_back(btn_palette_select_, IconFactory::IconType::Select);
+    palette_tool_buttons_.emplace_back(btn_palette_wire_, IconFactory::IconType::Wire);
+    palette_tool_buttons_.emplace_back(btn_palette_pan_, IconFactory::IconType::Pan);
+    palette_tool_buttons_.emplace_back(btn_palette_del_, IconFactory::IconType::Delete);
+    palette_tool_buttons_.emplace_back(btn_dock_merge_, IconFactory::IconType::BooleanUnion);
+    palette_tool_buttons_.emplace_back(btn_dock_intersect_, IconFactory::IconType::BooleanIntersect);
+    palette_tool_buttons_.emplace_back(btn_dock_subtract_, IconFactory::IconType::BooleanSubtract);
+    palette_tool_buttons_.emplace_back(btn_dock_xor_, IconFactory::IconType::BooleanXor);
+    palette_tool_buttons_.emplace_back(btn_dock_split_, IconFactory::IconType::SplitFigure);
+    palette_tool_buttons_.emplace_back(btn_dock_down_, IconFactory::IconType::DrillDown);
+    palette_tool_buttons_.emplace_back(btn_dock_up_, IconFactory::IconType::PopScope);
+    palette_tool_buttons_.emplace_back(btn_dock_front_, IconFactory::IconType::BringToFront);
+    palette_tool_buttons_.emplace_back(btn_dock_forward_, IconFactory::IconType::BringForward);
+    palette_tool_buttons_.emplace_back(btn_dock_backward_, IconFactory::IconType::SendBackward);
+    palette_tool_buttons_.emplace_back(btn_dock_back_, IconFactory::IconType::SendToBack);
+    palette_tool_buttons_.emplace_back(btn_dock_rot_ccw_, IconFactory::IconType::RotateCCW);
+    palette_tool_buttons_.emplace_back(btn_dock_rot_cw_, IconFactory::IconType::RotateCW);
+    palette_tool_buttons_.emplace_back(btn_dock_angle_snap_, IconFactory::IconType::AngleSnap);
+    palette_tool_buttons_.emplace_back(btn_dock_undo_, IconFactory::IconType::Undo);
+    palette_tool_buttons_.emplace_back(btn_dock_redo_, IconFactory::IconType::Redo);
 
     // Stencil Library Dock (Left) - Shapes
     stencil_dock_ = new StencilLibraryDock(this);
@@ -3178,8 +3030,93 @@ private:
       }
     });
 
+    // Start Arrowhead controls
+    auto* start_arrow_row = new QHBoxLayout();
+    inspector_edge_start_cb_ = new QCheckBox("Start Arrow", inspector_edge_group_);
+    inspector_edge_start_combo_ = new QComboBox(inspector_edge_group_);
+    inspector_edge_start_combo_->addItem("Stealth (Sharp)", "stealth");
+    inspector_edge_start_combo_->addItem("Triangle", "triangle");
+    inspector_edge_start_combo_->addItem("Diamond", "diamond");
+    inspector_edge_start_combo_->addItem("Circle / Dot", "circle");
+    inspector_edge_start_combo_->addItem("Square / Box", "square");
+    inspector_edge_start_combo_->addItem("Open Vee", "vee");
+    start_arrow_row->addWidget(inspector_edge_start_cb_);
+    start_arrow_row->addWidget(inspector_edge_start_combo_);
+
+    connect(inspector_edge_start_cb_, &QCheckBox::toggled, this, [this](bool checked) {
+      inspector_edge_start_combo_->setEnabled(checked);
+      if (canvas_ && canvas_->selected_edge() != madi::core::InvalidEdgeId) {
+        std::string shape = inspector_edge_start_combo_->currentData().toString().toStdString();
+        canvas_->set_selected_edge_source_arrow(checked, shape);
+        set_document_modified(true);
+      }
+    });
+    connect(inspector_edge_start_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
+      if (inspector_edge_start_cb_->isChecked() && canvas_ && canvas_->selected_edge() != madi::core::InvalidEdgeId) {
+        std::string shape = inspector_edge_start_combo_->currentData().toString().toStdString();
+        canvas_->set_selected_edge_source_arrow(true, shape);
+        set_document_modified(true);
+      }
+    });
+
+    // End Arrowhead controls
+    auto* end_arrow_row = new QHBoxLayout();
+    inspector_edge_end_cb_ = new QCheckBox("End Arrow", inspector_edge_group_);
+    inspector_edge_end_combo_ = new QComboBox(inspector_edge_group_);
+    inspector_edge_end_combo_->addItem("Stealth (Sharp)", "stealth");
+    inspector_edge_end_combo_->addItem("Triangle", "triangle");
+    inspector_edge_end_combo_->addItem("Diamond", "diamond");
+    inspector_edge_end_combo_->addItem("Circle / Dot", "circle");
+    inspector_edge_end_combo_->addItem("Square / Box", "square");
+    inspector_edge_end_combo_->addItem("Open Vee", "vee");
+    end_arrow_row->addWidget(inspector_edge_end_cb_);
+    end_arrow_row->addWidget(inspector_edge_end_combo_);
+
+    connect(inspector_edge_end_cb_, &QCheckBox::toggled, this, [this](bool checked) {
+      inspector_edge_end_combo_->setEnabled(checked);
+      if (canvas_ && canvas_->selected_edge() != madi::core::InvalidEdgeId) {
+        std::string shape = inspector_edge_end_combo_->currentData().toString().toStdString();
+        canvas_->set_selected_edge_target_arrow(checked, shape);
+        set_document_modified(true);
+      }
+    });
+    connect(inspector_edge_end_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
+      if (inspector_edge_end_cb_->isChecked() && canvas_ && canvas_->selected_edge() != madi::core::InvalidEdgeId) {
+        std::string shape = inspector_edge_end_combo_->currentData().toString().toStdString();
+        canvas_->set_selected_edge_target_arrow(true, shape);
+        set_document_modified(true);
+      }
+    });
+
+    // Topology branch buttons
+    auto* topology_btn_row = new QHBoxLayout();
+    btn_edge_add_input_ = new QPushButton("+ Input Branch", inspector_edge_group_);
+    btn_edge_add_output_ = new QPushButton("+ Output Branch", inspector_edge_group_);
+    btn_edge_add_input_->setToolTip("Add an additional input source branch to this arrow connector.");
+    btn_edge_add_output_->setToolTip("Add an additional output destination branch to this arrow connector.");
+    topology_btn_row->addWidget(btn_edge_add_input_);
+    topology_btn_row->addWidget(btn_edge_add_output_);
+
+    connect(btn_edge_add_input_, &QPushButton::clicked, this, [this]() {
+      if (canvas_) {
+        canvas_->add_arrow_source_branch_to_selected();
+        set_document_modified(true);
+        update_inspector();
+      }
+    });
+    connect(btn_edge_add_output_, &QPushButton::clicked, this, [this]() {
+      if (canvas_) {
+        canvas_->add_arrow_branch_to_selected();
+        set_document_modified(true);
+        update_inspector();
+      }
+    });
+
     edge_layout->addRow("Name:", inspector_edge_name_);
-    edge_layout->addRow("Type:", inspector_edge_type_);
+    edge_layout->addRow("Topology:", inspector_edge_type_);
+    edge_layout->addRow("Start:", start_arrow_row);
+    edge_layout->addRow("End:", end_arrow_row);
+    edge_layout->addRow("Branches:", topology_btn_row);
     edge_layout->addRow("Alignment:", inspector_edge_aligned_cb_);
     form_layout->addRow(inspector_edge_group_);
     inspector_edge_group_->setVisible(false);
@@ -3309,18 +3246,58 @@ public:
         if (inspector_edge_group_) {
           inspector_edge_group_->setVisible(true);
           inspector_edge_name_->setText(QString::fromStdString(edge->name));
-          if (edge->is_multipoint()) {
-            inspector_edge_type_->setText(QString("Multipoint Arrow (%1 targets)").arg(edge->extra_destinations.size() + 1));
+          size_t in_cnt = edge->input_count();
+          size_t out_cnt = edge->output_count();
+          if (in_cnt > 1 || out_cnt > 1) {
+            inspector_edge_type_->setText(QString("Topology (%1 Inputs ➔ %2 Outputs)").arg(in_cnt).arg(out_cnt));
             inspector_edge_aligned_cb_->setEnabled(true);
             inspector_edge_aligned_cb_->blockSignals(true);
             inspector_edge_aligned_cb_->setChecked(edge->is_branches_aligned());
             inspector_edge_aligned_cb_->blockSignals(false);
           } else {
-            inspector_edge_type_->setText("Single Arrow / Net");
+            inspector_edge_type_->setText("1-to-1 Arrow Net");
             inspector_edge_aligned_cb_->setEnabled(false);
             inspector_edge_aligned_cb_->blockSignals(true);
             inspector_edge_aligned_cb_->setChecked(edge->is_branches_aligned());
             inspector_edge_aligned_cb_->blockSignals(false);
+          }
+
+          // Update start arrowhead controls
+          bool has_start = edge->has_source_arrow();
+          std::string start_shp = edge->source_arrowhead;
+          auto it_s = edge->properties.find("source_arrowhead");
+          if (it_s != edge->properties.end()) start_shp = it_s->second;
+
+          if (inspector_edge_start_cb_) {
+            inspector_edge_start_cb_->blockSignals(true);
+            inspector_edge_start_cb_->setChecked(has_start);
+            inspector_edge_start_cb_->blockSignals(false);
+          }
+          if (inspector_edge_start_combo_) {
+            inspector_edge_start_combo_->blockSignals(true);
+            int s_idx = inspector_edge_start_combo_->findData(QString::fromStdString(start_shp));
+            if (s_idx >= 0) inspector_edge_start_combo_->setCurrentIndex(s_idx);
+            inspector_edge_start_combo_->setEnabled(has_start);
+            inspector_edge_start_combo_->blockSignals(false);
+          }
+
+          // Update end arrowhead controls
+          bool has_end = edge->has_target_arrow();
+          std::string end_shp = edge->arrowhead;
+          auto it_e = edge->properties.find("arrowhead");
+          if (it_e != edge->properties.end()) end_shp = it_e->second;
+
+          if (inspector_edge_end_cb_) {
+            inspector_edge_end_cb_->blockSignals(true);
+            inspector_edge_end_cb_->setChecked(has_end);
+            inspector_edge_end_cb_->blockSignals(false);
+          }
+          if (inspector_edge_end_combo_) {
+            inspector_edge_end_combo_->blockSignals(true);
+            int e_idx = inspector_edge_end_combo_->findData(QString::fromStdString(end_shp));
+            if (e_idx >= 0) inspector_edge_end_combo_->setCurrentIndex(e_idx);
+            inspector_edge_end_combo_->setEnabled(has_end);
+            inspector_edge_end_combo_->blockSignals(false);
           }
         }
         active_inspected_node_ = madi::core::InvalidNodeId;
@@ -4336,6 +4313,12 @@ public:
   QLineEdit* inspector_edge_name_{nullptr};
   QLabel* inspector_edge_type_{nullptr};
   QCheckBox* inspector_edge_aligned_cb_{nullptr};
+  QCheckBox* inspector_edge_start_cb_{nullptr};
+  QComboBox* inspector_edge_start_combo_{nullptr};
+  QCheckBox* inspector_edge_end_cb_{nullptr};
+  QComboBox* inspector_edge_end_combo_{nullptr};
+  QPushButton* btn_edge_add_input_{nullptr};
+  QPushButton* btn_edge_add_output_{nullptr};
 
   // Theme Menus
   QMenu* menu_ui_themes_{nullptr};
@@ -4350,7 +4333,7 @@ public:
   QSystemTrayIcon* tray_icon_{nullptr};
 
   // Docks
-  QDockWidget* dock_palette_{nullptr};
+  ToolLibraryDock* dock_palette_{nullptr};
   StencilLibraryDock* stencil_dock_{nullptr};
   HierarchyTreeDock* hierarchy_dock_{nullptr};
   QDockWidget* dock_inspector_{nullptr};

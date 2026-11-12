@@ -301,11 +301,19 @@ struct BranchTarget {
   std::string arrowhead{"stealth"};
 };
 
+struct BranchSource {
+  NodeId source_node{InvalidNodeId};
+  PortId source_port{InvalidPortId};
+  std::vector<Vec2d> waypoints;
+  std::string arrowhead{"none"};
+};
+
 struct Edge {
   EdgeId id{InvalidEdgeId};
   std::string name;
   NodeId source_node{InvalidNodeId};
   PortId source_port{InvalidPortId};
+  std::string source_arrowhead{"none"};
   NodeId target_node{InvalidNodeId};
   PortId target_port{InvalidPortId};
   std::vector<Vec2d> waypoints;
@@ -314,12 +322,51 @@ struct Edge {
   bool visible{true};
   bool selected{false};
   std::string arrowhead{"stealth"};
+  std::vector<BranchSource> extra_sources;
   std::vector<BranchTarget> extra_destinations;
   BranchAlignment branch_alignment{BranchAlignment::Aligned};
   bool branches_aligned{true};
 
   [[nodiscard]] bool is_multipoint() const noexcept {
+    return !extra_destinations.empty() || !extra_sources.empty();
+  }
+
+  [[nodiscard]] bool is_multi_input() const noexcept {
+    return !extra_sources.empty();
+  }
+
+  [[nodiscard]] bool is_multi_output() const noexcept {
     return !extra_destinations.empty();
+  }
+
+  [[nodiscard]] size_t input_count() const noexcept {
+    return 1 + extra_sources.size();
+  }
+
+  [[nodiscard]] size_t output_count() const noexcept {
+    return 1 + extra_destinations.size();
+  }
+
+  [[nodiscard]] bool has_source_arrow() const noexcept {
+    auto it = properties.find("source_arrowhead");
+    const std::string& shp = (it != properties.end()) ? it->second : source_arrowhead;
+    return !shp.empty() && shp != "none" && shp != "false";
+  }
+
+  [[nodiscard]] bool has_target_arrow() const noexcept {
+    auto it = properties.find("arrowhead");
+    const std::string& shp = (it != properties.end()) ? it->second : arrowhead;
+    return !shp.empty() && shp != "none" && shp != "false";
+  }
+
+  void set_source_arrow(bool enable, const std::string& shape = "stealth") {
+    source_arrowhead = enable ? (shape.empty() || shape == "none" ? "stealth" : shape) : "none";
+    properties["source_arrowhead"] = source_arrowhead;
+  }
+
+  void set_target_arrow(bool enable, const std::string& shape = "stealth") {
+    arrowhead = enable ? (shape.empty() || shape == "none" ? "stealth" : shape) : "none";
+    properties["arrowhead"] = arrowhead;
   }
 
   [[nodiscard]] bool is_branches_aligned() const noexcept {
@@ -345,13 +392,28 @@ struct Edge {
     });
   }
 
+  void add_source(NodeId node_id, PortId port_id, std::string arrow = "none") {
+    extra_sources.push_back(BranchSource{
+      .source_node = node_id,
+      .source_port = port_id,
+      .waypoints = {},
+      .arrowhead = std::move(arrow)
+    });
+  }
+
   [[nodiscard]] Rect2d bounding_box() const noexcept {
-    if (waypoints.empty() && extra_destinations.empty())
+    if (waypoints.empty() && extra_destinations.empty() && extra_sources.empty())
       return {};
     double min_x = 1e9, max_x = -1e9, min_y = 1e9, max_y = -1e9;
     for (const auto& wp : waypoints) {
       min_x = std::min(min_x, wp.x); max_x = std::max(max_x, wp.x);
       min_y = std::min(min_y, wp.y); max_y = std::max(max_y, wp.y);
+    }
+    for (const auto& branch : extra_sources) {
+      for (const auto& wp : branch.waypoints) {
+        min_x = std::min(min_x, wp.x); max_x = std::max(max_x, wp.x);
+        min_y = std::min(min_y, wp.y); max_y = std::max(max_y, wp.y);
+      }
     }
     for (const auto& branch : extra_destinations) {
       for (const auto& wp : branch.waypoints) {
@@ -415,16 +477,36 @@ public:
       notify_listeners([pid](IGraphModelListener* l) { l->on_port_removed(pid); });
     }
 
-    // Cascade delete connected edges
-    std::vector<EdgeId> edges_to_remove;
-    for (const auto& [eid, edge] : edges_) {
-      if (edge.source_node == id || edge.target_node == id) {
-        edges_to_remove.push_back(eid);
+    // Detach connected edges (preserving arrows and their waypoints on the diagram)
+    for (auto& [eid, edge] : edges_) {
+      bool modified = false;
+      if (edge.source_node == id) {
+        edge.source_node = InvalidNodeId;
+        edge.source_port = InvalidPortId;
+        modified = true;
       }
-    }
-    for (EdgeId eid : edges_to_remove) {
-      edges_.erase(eid);
-      notify_listeners([eid](IGraphModelListener* l) { l->on_edge_removed(eid); });
+      if (edge.target_node == id) {
+        edge.target_node = InvalidNodeId;
+        edge.target_port = InvalidPortId;
+        modified = true;
+      }
+      for (auto& src : edge.extra_sources) {
+        if (src.source_node == id) {
+          src.source_node = InvalidNodeId;
+          src.source_port = InvalidPortId;
+          modified = true;
+        }
+      }
+      for (auto& dst : edge.extra_destinations) {
+        if (dst.target_node == id) {
+          dst.target_node = InvalidNodeId;
+          dst.target_port = InvalidPortId;
+          modified = true;
+        }
+      }
+      if (modified) {
+        notify_listeners([&edge](IGraphModelListener* l) { l->on_edge_modified(edge); });
+      }
     }
 
     nodes_.erase(it);
@@ -655,9 +737,55 @@ public:
   }
 
   void update_edge_route(Edge& edge) {
-    if (edge.source_node == InvalidNodeId || edge.target_node == InvalidNodeId) {
+    if (edge.source_node == InvalidNodeId && edge.target_node == InvalidNodeId) {
       return;
     }
+
+    // 1. Single-ended arrow: Source attached to node, Target in free space
+    if (edge.source_node != InvalidNodeId && edge.target_node == InvalidNodeId) {
+      if (const auto* src_node = find_node(edge.source_node)) {
+        const Port* src_port = find_port(edge.source_port);
+        if (!src_port && !src_node->port_ids.empty()) {
+          src_port = find_port(src_node->port_ids.front());
+          if (src_port) edge.source_port = src_port->id;
+        }
+        if (src_port) {
+          const Vec2d p_src = src_node->resolve_port_position(*src_port);
+          const Vec2d p_free = !edge.waypoints.empty() ? edge.waypoints.back() : p_src + Vec2d{60.0, 0.0};
+          if (edge.routing_style == RoutingStyle::Direct) {
+            edge.waypoints = {p_src, p_free};
+          } else {
+            edge.waypoints = compute_orthogonal_path(
+                p_src, src_port->direction, p_free, PortDirection::North, edge.source_node, InvalidNodeId);
+          }
+        }
+      }
+      return;
+    }
+
+    // 2. Single-ended arrow: Target attached to node, Source in free space
+    if (edge.source_node == InvalidNodeId && edge.target_node != InvalidNodeId) {
+      if (const auto* dst_node = find_node(edge.target_node)) {
+        const Port* dst_port = find_port(edge.target_port);
+        if (!dst_port && !dst_node->port_ids.empty()) {
+          dst_port = find_port(dst_node->port_ids.front());
+          if (dst_port) edge.target_port = dst_port->id;
+        }
+        if (dst_port) {
+          const Vec2d p_dst = dst_node->resolve_port_position(*dst_port);
+          const Vec2d p_free = !edge.waypoints.empty() ? edge.waypoints.front() : p_dst - Vec2d{60.0, 0.0};
+          if (edge.routing_style == RoutingStyle::Direct) {
+            edge.waypoints = {p_free, p_dst};
+          } else {
+            edge.waypoints = compute_orthogonal_path(
+                p_free, PortDirection::North, p_dst, dst_port->direction, InvalidNodeId, edge.target_node);
+          }
+        }
+      }
+      return;
+    }
+
+    // 3. Dual-ended arrow: Both Source and Target attached to nodes
     const auto* src_node = find_node(edge.source_node);
     const auto* dst_node = find_node(edge.target_node);
     if (!src_node || !dst_node)
@@ -666,34 +794,54 @@ public:
     const Port* src_port = find_port(edge.source_port);
     const Port* dst_port = find_port(edge.target_port);
 
-    if (!src_port && !src_node->port_ids.empty()) {
-      double min_d = 1e18;
-      const Vec2d target_center = dst_node->bounds.center();
-      for (PortId pid : src_node->port_ids) {
-        if (const auto* p = find_port(pid)) {
-          double d = src_node->resolve_port_position(*p).distance_sq_to(target_center);
-          if (d < min_d) {
-            min_d = d;
-            src_port = p;
-            edge.source_port = p->id;
+    if (!src_port) {
+      if (!src_node->port_ids.empty()) {
+        double min_d = 1e18;
+        const Vec2d target_center = dst_node->bounds.center();
+        for (PortId pid : src_node->port_ids) {
+          if (const auto* p = find_port(pid)) {
+            double d = src_node->resolve_port_position(*p).distance_sq_to(target_center);
+            if (d < min_d) {
+              min_d = d;
+              src_port = p;
+              edge.source_port = p->id;
+            }
           }
         }
+      } else {
+        Port p;
+        p.parent_node = edge.source_node;
+        p.name = "E";
+        p.local_anchor = {1.0, 0.5};
+        p.direction = PortDirection::East;
+        edge.source_port = add_port(std::move(p));
+        src_port = find_port(edge.source_port);
       }
     }
 
-    if (!dst_port && !dst_node->port_ids.empty()) {
-      double min_d = 1e18;
-      const Vec2d source_pos =
-          src_port ? src_node->resolve_port_position(*src_port) : src_node->bounds.center();
-      for (PortId pid : dst_node->port_ids) {
-        if (const auto* p = find_port(pid)) {
-          double d = dst_node->resolve_port_position(*p).distance_sq_to(source_pos);
-          if (d < min_d) {
-            min_d = d;
-            dst_port = p;
-            edge.target_port = p->id;
+    if (!dst_port) {
+      if (!dst_node->port_ids.empty()) {
+        double min_d = 1e18;
+        const Vec2d source_pos =
+            src_port ? src_node->resolve_port_position(*src_port) : src_node->bounds.center();
+        for (PortId pid : dst_node->port_ids) {
+          if (const auto* p = find_port(pid)) {
+            double d = dst_node->resolve_port_position(*p).distance_sq_to(source_pos);
+            if (d < min_d) {
+              min_d = d;
+              dst_port = p;
+              edge.target_port = p->id;
+            }
           }
         }
+      } else {
+        Port p;
+        p.parent_node = edge.target_node;
+        p.name = "W";
+        p.local_anchor = {0.0, 0.5};
+        p.direction = PortDirection::West;
+        edge.target_port = add_port(std::move(p));
+        dst_port = find_port(edge.target_port);
       }
     }
 
@@ -852,6 +1000,49 @@ public:
         if (branch.waypoints.empty() || branch.waypoints.front() != best_tap) {
           branch.waypoints.insert(branch.waypoints.begin(), best_tap);
         }
+      }
+    }
+
+    // Route extra inputs (source branches) in topologies
+    for (auto& branch : edge.extra_sources) {
+      if (branch.source_node == InvalidNodeId) continue;
+      const auto* b_node = find_node(branch.source_node);
+      if (!b_node) continue;
+      const Port* b_port = find_port(branch.source_port);
+      if (!b_port && !b_node->port_ids.empty()) {
+        b_port = find_port(b_node->port_ids.front());
+        branch.source_port = b_port ? b_port->id : InvalidPortId;
+      }
+      if (!b_port) continue;
+      const Vec2d p_branch_src = b_node->resolve_port_position(*b_port);
+
+      // Find closest tap along edge.waypoints
+      Vec2d best_tap = edge.waypoints.empty() ? p_src : edge.waypoints.front();
+      double min_d_sq = 1e18;
+      for (size_t i = 0; i + 1 < edge.waypoints.size(); ++i) {
+        const auto& p1 = edge.waypoints[i];
+        const auto& p2 = edge.waypoints[i + 1];
+        const Vec2d seg = p2 - p1;
+        const double len_sq = seg.length_sq();
+        Vec2d proj = p1;
+        if (len_sq > 1e-6) {
+          const double t = std::clamp((p_branch_src - p1).dot(seg) / len_sq, 0.1, 0.9);
+          proj = p1 + seg * t;
+        }
+        const double d_sq = proj.distance_sq_to(p_branch_src);
+        if (d_sq < min_d_sq) {
+          min_d_sq = d_sq;
+          best_tap = proj;
+        }
+      }
+
+      branch.waypoints = compute_orthogonal_path(
+          p_branch_src, b_port->direction, best_tap, PortDirection::Omnidirectional, branch.source_node, edge.target_node);
+      if (branch.waypoints.empty() || branch.waypoints.front() != p_branch_src) {
+        branch.waypoints.insert(branch.waypoints.begin(), p_branch_src);
+      }
+      if (branch.waypoints.back() != best_tap) {
+        branch.waypoints.push_back(best_tap);
       }
     }
   }

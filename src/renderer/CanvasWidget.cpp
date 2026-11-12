@@ -848,22 +848,43 @@ core::EdgeId CanvasWidget::auto_route_arrow(core::NodeId src_node, core::PortId 
 bool CanvasWidget::add_arrow_branch(core::EdgeId edge_id, core::NodeId target_node, core::PortId target_port) {
   if (!graph_model_) return false;
   auto* edge = graph_model_->find_edge(edge_id);
-  const auto* d_node = graph_model_->find_node(target_node);
-  if (!edge || !d_node) return false;
+  if (!edge) return false;
 
-  if (target_port == core::InvalidPortId) {
-    core::Vec2d trunk_center = edge->waypoints.empty() ? d_node->bounds.center() : edge->waypoints[edge->waypoints.size() / 2];
-    target_port = find_closest_or_create_port(*graph_model_, target_node, trunk_center);
+  if (target_node == core::InvalidNodeId) {
+    for (const auto& [nid, _] : graph_model_->nodes()) {
+      if (nid != edge->source_node && nid != edge->target_node) {
+        bool exists = false;
+        for (const auto& d : edge->extra_destinations) {
+          if (d.target_node == nid) { exists = true; break; }
+        }
+        if (!exists) {
+          target_node = nid;
+          break;
+        }
+      }
+    }
   }
 
-  edge->add_destination(target_node, target_port, "filled");
-  graph_model_->update_edge_route(*edge);
+  const auto* d_node = graph_model_->find_node(target_node);
+  if (d_node) {
+    if (target_port == core::InvalidPortId) {
+      core::Vec2d trunk_center = edge->waypoints.empty() ? d_node->bounds.center() : edge->waypoints[edge->waypoints.size() / 2];
+      target_port = find_closest_or_create_port(*graph_model_, target_node, trunk_center);
+    }
+    edge->add_destination(target_node, target_port, "filled");
+  } else {
+    core::BranchTarget bt;
+    core::Vec2d base_pt = edge->waypoints.empty() ? core::Vec2d{100.0, 100.0} : edge->waypoints.back();
+    bt.waypoints = {base_pt, {base_pt.x + 60.0, base_pt.y + 40.0}};
+    bt.arrowhead = edge->arrowhead.empty() ? "stealth" : edge->arrowhead;
+    edge->extra_destinations.push_back(std::move(bt));
+  }
 
+  graph_model_->update_edge_route(*edge);
   update();
 #ifdef MADI_ENABLE_QT
-  emit status_message_requested(QString("Added multipoint branch on arrow Net %1 to node %2")
-      .arg(edge_id)
-      .arg(QString::fromStdString(d_node->name)));
+  emit status_message_requested(QString("Added output branch on arrow Net %1").arg(edge_id));
+  emit diagram_modified();
 #endif
   return true;
 }
@@ -905,6 +926,177 @@ void CanvasWidget::set_selected_edge_branches_aligned(bool aligned) {
   if (selected_edge_ != core::InvalidEdgeId) {
     set_edge_branches_aligned(selected_edge_, aligned);
   }
+}
+
+bool CanvasWidget::add_arrow_source_branch(core::EdgeId edge_id, core::NodeId source_node, core::PortId source_port) {
+  if (!graph_model_) return false;
+  auto* edge = graph_model_->find_edge(edge_id);
+  if (!edge) return false;
+
+  if (source_node == core::InvalidNodeId) {
+    for (const auto& [nid, _] : graph_model_->nodes()) {
+      if (nid != edge->source_node && nid != edge->target_node) {
+        bool exists = false;
+        for (const auto& s : edge->extra_sources) {
+          if (s.source_node == nid) { exists = true; break; }
+        }
+        if (!exists) {
+          source_node = nid;
+          break;
+        }
+      }
+    }
+  }
+
+  const auto* s_node = graph_model_->find_node(source_node);
+  if (s_node) {
+    if (source_port == core::InvalidPortId) {
+      core::Vec2d trunk_center = edge->waypoints.empty() ? s_node->bounds.center() : edge->waypoints.front();
+      source_port = find_closest_or_create_port(*graph_model_, source_node, trunk_center);
+    }
+    edge->add_source(source_node, source_port, "none");
+  } else {
+    core::BranchSource bs;
+    core::Vec2d base_pt = edge->waypoints.empty() ? core::Vec2d{100.0, 100.0} : edge->waypoints.front();
+    bs.waypoints = {{base_pt.x - 60.0, base_pt.y - 40.0}, base_pt};
+    bs.arrowhead = "none";
+    edge->extra_sources.push_back(std::move(bs));
+  }
+
+  graph_model_->update_edge_route(*edge);
+  update();
+#ifdef MADI_ENABLE_QT
+  emit status_message_requested(QString("Added input branch on arrow topology Net %1").arg(edge_id));
+  emit diagram_modified();
+#endif
+  return true;
+}
+
+bool CanvasWidget::add_arrow_source_branch_to_selected(core::NodeId source_node, core::PortId source_port) {
+  if (selected_edge_ == core::InvalidEdgeId) {
+#ifdef MADI_ENABLE_QT
+    emit status_message_requested("No arrow/wire selected to add input branch to");
+#endif
+    return false;
+  }
+  return add_arrow_source_branch(selected_edge_, source_node, source_port);
+}
+
+void CanvasWidget::set_edge_source_arrow(core::EdgeId edge_id, bool enable, const std::string& shape) {
+  if (!graph_model_) return;
+  if (auto* edge = graph_model_->find_edge(edge_id)) {
+    edge->set_source_arrow(enable, shape);
+    update();
+#ifdef MADI_ENABLE_QT
+    emit edge_arrowhead_changed(edge_id);
+    emit diagram_modified();
+#endif
+  }
+}
+
+void CanvasWidget::set_edge_target_arrow(core::EdgeId edge_id, bool enable, const std::string& shape) {
+  if (!graph_model_) return;
+  if (auto* edge = graph_model_->find_edge(edge_id)) {
+    edge->set_target_arrow(enable, shape);
+    update();
+#ifdef MADI_ENABLE_QT
+    emit edge_arrowhead_changed(edge_id);
+    emit diagram_modified();
+#endif
+  }
+}
+
+void CanvasWidget::set_selected_edge_source_arrow(bool enable, const std::string& shape) {
+  if (selected_edge_ != core::InvalidEdgeId) {
+    set_edge_source_arrow(selected_edge_, enable, shape);
+  }
+}
+
+void CanvasWidget::set_selected_edge_target_arrow(bool enable, const std::string& shape) {
+  if (selected_edge_ != core::InvalidEdgeId) {
+    set_edge_target_arrow(selected_edge_, enable, shape);
+  }
+}
+
+void CanvasWidget::relocate_edge(core::EdgeId edge_id, core::Vec2d delta) {
+  if (!graph_model_) return;
+  auto* edge = graph_model_->find_edge(edge_id);
+  if (!edge) return;
+  core::Edge old_e = *edge;
+  for (auto& wp : edge->waypoints) wp += delta;
+  for (auto& s : edge->extra_sources) {
+    for (auto& wp : s.waypoints) wp += delta;
+  }
+  for (auto& d : edge->extra_destinations) {
+    for (auto& wp : d.waypoints) wp += delta;
+  }
+  edge->source_node = core::InvalidNodeId;
+  edge->source_port = core::InvalidPortId;
+  edge->target_node = core::InvalidNodeId;
+  edge->target_port = core::InvalidPortId;
+  for (auto& s : edge->extra_sources) {
+    s.source_node = core::InvalidNodeId;
+    s.source_port = core::InvalidPortId;
+  }
+  for (auto& d : edge->extra_destinations) {
+    d.target_node = core::InvalidNodeId;
+    d.target_port = core::InvalidPortId;
+  }
+  if (command_history_) {
+    command_history_->execute(std::make_unique<core::MoveEdgeCommand>(*graph_model_, edge_id, std::move(old_e), *edge));
+  }
+  update();
+#ifdef MADI_ENABLE_QT
+  emit diagram_modified();
+#endif
+}
+
+CanvasWidget::ActiveEdgeHandle CanvasWidget::hit_test_edge_handles(core::Vec2d screen_pt, core::EdgeId edge_id) const {
+  if (!graph_model_ || edge_id == core::InvalidEdgeId) return {};
+  const auto* edge = graph_model_->find_edge(edge_id);
+  if (!edge || edge->waypoints.empty()) return {};
+
+  const double handle_radius_screen = 8.0;
+
+  auto hit = [&](core::Vec2d world_pos) {
+    const core::Vec2d spt = world_to_screen(world_pos);
+    return spt.distance_to(screen_pt) <= handle_radius_screen;
+  };
+
+  // 1. Start Endpoint
+  if (hit(edge->waypoints.front())) {
+    return {EdgeHandleKind::StartEndpoint, 0};
+  }
+
+  // 2. End Endpoint
+  if (hit(edge->waypoints.back())) {
+    return {EdgeHandleKind::EndEndpoint, edge->waypoints.size() - 1};
+  }
+
+  // 3. Intermediate Waypoints
+  for (size_t i = 1; i + 1 < edge->waypoints.size(); ++i) {
+    if (hit(edge->waypoints[i])) {
+      return {EdgeHandleKind::Waypoint, i};
+    }
+  }
+
+  // 4. Extra sources
+  for (size_t k = 0; k < edge->extra_sources.size(); ++k) {
+    const auto& s = edge->extra_sources[k];
+    if (!s.waypoints.empty() && hit(s.waypoints.front())) {
+      return {EdgeHandleKind::ExtraSourceEndpoint, k};
+    }
+  }
+
+  // 5. Extra destinations
+  for (size_t k = 0; k < edge->extra_destinations.size(); ++k) {
+    const auto& d = edge->extra_destinations[k];
+    if (!d.waypoints.empty() && hit(d.waypoints.back())) {
+      return {EdgeHandleKind::ExtraDestinationEndpoint, k};
+    }
+  }
+
+  return {};
 }
 
 void CanvasWidget::copy_selected() {
@@ -1054,7 +1246,12 @@ void CanvasWidget::duplicate_selected() {
 }
 
 void CanvasWidget::nudge_selected(core::Vec2d delta) {
-  if (!graph_model_ || selected_nodes_.empty()) return;
+  if (!graph_model_) return;
+  if (selected_edge_ != core::InvalidEdgeId && selected_nodes_.empty()) {
+    relocate_edge(selected_edge_, delta);
+    return;
+  }
+  if (selected_nodes_.empty()) return;
   if (command_history_) {
     command_history_->execute(std::make_unique<core::MoveNodesCommand>(*graph_model_, selected_nodes_, delta));
   } else {
@@ -2761,6 +2958,32 @@ void CanvasWidget::mouseDoubleClickEvent(QMouseEvent* event) {
         }
       }
     }
+
+    const core::EdgeId hit_edge = find_hit_edge(click_world, 8.0 / std::max(0.1, zoom_level_));
+    if (hit_edge != core::InvalidEdgeId && graph_model_) {
+      if (auto* edge = graph_model_->find_edge(hit_edge)) {
+        for (size_t i = 0; i + 1 < edge->waypoints.size(); ++i) {
+          const auto& p1 = edge->waypoints[i];
+          const auto& p2 = edge->waypoints[i + 1];
+          const core::Vec2d seg = p2 - p1;
+          const double l_sq = seg.length_sq();
+          if (l_sq > 1e-4) {
+            const double t = (click_world - p1).dot(seg) / l_sq;
+            if (t >= 0.05 && t <= 0.95) {
+              const core::Vec2d proj = p1 + seg * t;
+              if (proj.distance_to(click_world) <= 8.0 / std::max(0.1, zoom_level_)) {
+                edge->waypoints.insert(edge->waypoints.begin() + i + 1, click_world);
+                select_edge(hit_edge);
+                update();
+                emit diagram_modified();
+                event->accept();
+                return;
+              }
+            }
+          }
+        }
+      }
+    }
   }
 }
 
@@ -3005,6 +3228,22 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
   }
 
   // ToolMode::Select - Hit-test Selection Manipulators (8 Resize Handles, Lollipop Rotation Stalk, Quick-Connect Arrows)
+  if (selected_edge_ != core::InvalidEdgeId && graph_model_) {
+    const auto edge_handle = hit_test_edge_handles(last_mouse_screen_, selected_edge_);
+    if (edge_handle.kind != EdgeHandleKind::None) {
+      if (const auto* edge = graph_model_->find_edge(selected_edge_)) {
+        active_edge_handle_ = edge_handle;
+        edge_snapshot_before_drag_ = *edge;
+        edge_drag_start_world_ = interaction_start_world_;
+        is_edge_drag_modified_ = false;
+        interaction_state_ = InteractionState::DraggingEdgeHandle;
+        update();
+        event->accept();
+        return;
+      }
+    }
+  }
+
   core::NodeId handle_node = core::InvalidNodeId;
   const HandleType hit_handle = hit_test_handles(last_mouse_screen_, &handle_node);
   if (hit_handle != HandleType::None && handle_node != core::InvalidNodeId && graph_model_) {
@@ -3134,6 +3373,13 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
   const core::EdgeId hit_edge = find_hit_edge(interaction_start_world_, 8.0 / std::max(0.1, zoom_level_));
   if (hit_edge != core::InvalidEdgeId && graph_model_) {
     select_edge(hit_edge, !(event->modifiers() & Qt::ShiftModifier));
+    if (const auto* edge = graph_model_->find_edge(hit_edge)) {
+      edge_snapshot_before_drag_ = *edge;
+      edge_drag_start_world_ = interaction_start_world_;
+      is_edge_drag_modified_ = false;
+      interaction_state_ = InteractionState::DraggingEdge;
+    }
+    update();
     return;
   }
 
@@ -3530,6 +3776,148 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
     }
     update_lod_state();
     update();
+  } else if (interaction_state_ == InteractionState::DraggingEdge) {
+    if (graph_model_ && selected_edge_ != core::InvalidEdgeId) {
+      if (auto* edge = graph_model_->find_edge(selected_edge_)) {
+        core::Vec2d delta = current_world - edge_drag_start_world_;
+        if (!(event->modifiers() & Qt::AltModifier) && grid_manager_ && grid_manager_->is_snap_enabled()) {
+          delta = grid_manager_->snap_to_grid(delta);
+        }
+        for (size_t i = 0; i < edge->waypoints.size() && i < edge_snapshot_before_drag_.waypoints.size(); ++i) {
+          edge->waypoints[i] = edge_snapshot_before_drag_.waypoints[i] + delta;
+        }
+        for (size_t k = 0; k < edge->extra_sources.size() && k < edge_snapshot_before_drag_.extra_sources.size(); ++k) {
+          for (size_t j = 0; j < edge->extra_sources[k].waypoints.size() && j < edge_snapshot_before_drag_.extra_sources[k].waypoints.size(); ++j) {
+            edge->extra_sources[k].waypoints[j] = edge_snapshot_before_drag_.extra_sources[k].waypoints[j] + delta;
+          }
+        }
+        for (size_t k = 0; k < edge->extra_destinations.size() && k < edge_snapshot_before_drag_.extra_destinations.size(); ++k) {
+          for (size_t j = 0; j < edge->extra_destinations[k].waypoints.size() && j < edge_snapshot_before_drag_.extra_destinations[k].waypoints.size(); ++j) {
+            edge->extra_destinations[k].waypoints[j] = edge_snapshot_before_drag_.extra_destinations[k].waypoints[j] + delta;
+          }
+        }
+        is_edge_drag_modified_ = true;
+        setCursor(Qt::SizeAllCursor);
+        emit cursor_position_changed(QString("Relocating Arrow Net: Δ(%1, %2) mm")
+            .arg(static_cast<int>(delta.x * 0.264583))
+            .arg(static_cast<int>(delta.y * 0.264583)));
+        update();
+        return;
+      }
+    }
+  } else if (interaction_state_ == InteractionState::DraggingEdgeHandle) {
+    if (graph_model_ && selected_edge_ != core::InvalidEdgeId) {
+      if (auto* edge = graph_model_->find_edge(selected_edge_)) {
+        core::Vec2d target_pt = current_world;
+        if (!(event->modifiers() & Qt::AltModifier) && grid_manager_ && grid_manager_->is_snap_enabled()) {
+          target_pt = grid_manager_->snap_to_grid(target_pt);
+        }
+
+        // Snap to port/node if near
+        core::NodeId h_node = core::InvalidNodeId;
+        core::PortId h_port = find_hit_port(current_world, 20.0, &h_node);
+        if (h_node == core::InvalidNodeId && spatial_index_) {
+          auto hits = spatial_index_->query_point(current_world);
+          if (!hits.empty()) {
+            h_node = pick_topmost_node(hits);
+            h_port = find_closest_or_create_port(*graph_model_, h_node, current_world);
+          }
+        }
+        if (h_node != core::InvalidNodeId && h_port == core::InvalidPortId) {
+          h_port = find_closest_or_create_port(*graph_model_, h_node, current_world);
+        }
+        if (h_port != core::InvalidPortId && h_node != core::InvalidNodeId) {
+          if (const auto* hn = graph_model_->find_node(h_node)) {
+            if (const auto* hp = graph_model_->find_port(h_port)) {
+              target_pt = hn->resolve_port_position(*hp);
+            }
+          }
+        }
+
+        switch (active_edge_handle_.kind) {
+          case EdgeHandleKind::StartEndpoint: {
+            if (edge->routing_style == core::RoutingStyle::Orthogonal) {
+              const auto p_end = edge->waypoints.empty() ? target_pt : edge->waypoints.back();
+              const auto* dst_node = graph_model_->find_node(edge->target_node);
+              const auto* dst_port = graph_model_->find_port(edge->target_port);
+              const auto s_dir = (h_port != core::InvalidPortId && graph_model_->find_port(h_port)) ?
+                  graph_model_->find_port(h_port)->direction : core::PortDirection::North;
+              if (dst_node && dst_port) {
+                edge->waypoints = graph_model_->compute_orthogonal_path(
+                    target_pt, s_dir, p_end, dst_port->direction, h_node, edge->target_node);
+              } else {
+                edge->waypoints = graph_model_->compute_orthogonal_path(
+                    target_pt, p_end, h_node, edge->target_node);
+              }
+            } else {
+              if (edge->waypoints.empty()) edge->waypoints = {target_pt, target_pt};
+              else edge->waypoints.front() = target_pt;
+            }
+            break;
+          }
+          case EdgeHandleKind::EndEndpoint: {
+            if (edge->routing_style == core::RoutingStyle::Orthogonal) {
+              const auto p_start = edge->waypoints.empty() ? target_pt : edge->waypoints.front();
+              const auto* src_node = graph_model_->find_node(edge->source_node);
+              const auto* src_port = graph_model_->find_port(edge->source_port);
+              const auto d_dir = (h_port != core::InvalidPortId && graph_model_->find_port(h_port)) ?
+                  graph_model_->find_port(h_port)->direction : core::PortDirection::North;
+              if (src_node && src_port) {
+                edge->waypoints = graph_model_->compute_orthogonal_path(
+                    p_start, src_port->direction, target_pt, d_dir, edge->source_node, h_node);
+              } else {
+                edge->waypoints = graph_model_->compute_orthogonal_path(
+                    p_start, target_pt, edge->source_node, h_node);
+              }
+            } else {
+              if (edge->waypoints.empty()) edge->waypoints = {target_pt, target_pt};
+              else edge->waypoints.back() = target_pt;
+            }
+            break;
+          }
+          case EdgeHandleKind::Waypoint:
+            if (active_edge_handle_.index < edge->waypoints.size()) {
+              edge->waypoints[active_edge_handle_.index] = target_pt;
+            }
+            break;
+          case EdgeHandleKind::ExtraSourceEndpoint:
+            if (active_edge_handle_.index < edge->extra_sources.size() &&
+                !edge->extra_sources[active_edge_handle_.index].waypoints.empty()) {
+              const auto p_tap = edge->extra_sources[active_edge_handle_.index].waypoints.back();
+              if (edge->routing_style == core::RoutingStyle::Orthogonal) {
+                edge->extra_sources[active_edge_handle_.index].waypoints =
+                    graph_model_->compute_orthogonal_path(target_pt, p_tap, h_node, core::InvalidNodeId);
+              } else {
+                edge->extra_sources[active_edge_handle_.index].waypoints.front() = target_pt;
+              }
+            }
+            break;
+          case EdgeHandleKind::ExtraDestinationEndpoint:
+            if (active_edge_handle_.index < edge->extra_destinations.size() &&
+                !edge->extra_destinations[active_edge_handle_.index].waypoints.empty()) {
+              const auto p_tap = edge->extra_destinations[active_edge_handle_.index].waypoints.front();
+              if (edge->routing_style == core::RoutingStyle::Orthogonal) {
+                edge->extra_destinations[active_edge_handle_.index].waypoints =
+                    graph_model_->compute_orthogonal_path(p_tap, target_pt, core::InvalidNodeId, h_node);
+              } else {
+                edge->extra_destinations[active_edge_handle_.index].waypoints.back() = target_pt;
+              }
+            }
+            break;
+          default:
+            break;
+        }
+
+        is_edge_drag_modified_ = true;
+        setCursor(Qt::CrossCursor);
+        emit cursor_position_changed(QString("Relocating Endpoint: (%1, %2)%3")
+            .arg(static_cast<int>(target_pt.x))
+            .arg(static_cast<int>(target_pt.y))
+            .arg(h_node != core::InvalidNodeId ? " [Port Snapped]" : ""));
+        update();
+        return;
+      }
+    }
   } else if (interaction_state_ == InteractionState::SelectingMarquee) {
     selection_marquee_ = core::Rect2d::from_corners(interaction_start_world_, current_world);
     update();
@@ -3719,6 +4107,18 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
               setCursor(Qt::PointingHandCursor);
             }
           } else {
+            if (selected_edge_ != core::InvalidEdgeId && graph_model_) {
+              const auto eh = hit_test_edge_handles(current_screen, selected_edge_);
+              if (eh.kind != EdgeHandleKind::None) {
+                setCursor(Qt::CrossCursor);
+                break;
+              }
+              const core::EdgeId hovered_eid = find_hit_edge(current_world, 8.0 / std::max(0.1, zoom_level_));
+              if (hovered_eid == selected_edge_) {
+                setCursor(Qt::SizeAllCursor);
+                break;
+              }
+            }
             setCursor(tool_mode_ == ToolMode::Select ? Qt::ArrowCursor : Qt::CrossCursor);
           }
         } else {
@@ -3874,6 +4274,75 @@ void CanvasWidget::mouseReleaseEvent(QMouseEvent* event) {
     }
     drag_initial_bounds_.clear();
     drag_accumulated_delta_ = {0.0, 0.0};
+  } else if (interaction_state_ == InteractionState::DraggingEdge) {
+    if (graph_model_ && selected_edge_ != core::InvalidEdgeId && is_edge_drag_modified_) {
+      if (auto* edge = graph_model_->find_edge(selected_edge_)) {
+        edge->source_node = core::InvalidNodeId;
+        edge->source_port = core::InvalidPortId;
+        edge->target_node = core::InvalidNodeId;
+        edge->target_port = core::InvalidPortId;
+        for (auto& s : edge->extra_sources) {
+          s.source_node = core::InvalidNodeId;
+          s.source_port = core::InvalidPortId;
+        }
+        for (auto& d : edge->extra_destinations) {
+          d.target_node = core::InvalidNodeId;
+          d.target_port = core::InvalidPortId;
+        }
+        if (command_history_) {
+          command_history_->execute(std::make_unique<core::MoveEdgeCommand>(
+              *graph_model_, selected_edge_, edge_snapshot_before_drag_, *edge));
+        }
+        emit diagram_modified();
+      }
+    }
+    is_edge_drag_modified_ = false;
+  } else if (interaction_state_ == InteractionState::DraggingEdgeHandle) {
+    if (graph_model_ && selected_edge_ != core::InvalidEdgeId && is_edge_drag_modified_) {
+      if (auto* edge = graph_model_->find_edge(selected_edge_)) {
+        core::Vec2d cur_world = screen_to_world(last_mouse_screen_);
+        core::NodeId h_node = core::InvalidNodeId;
+        core::PortId h_port = find_hit_port(cur_world, 20.0, &h_node);
+        if (h_node == core::InvalidNodeId && spatial_index_) {
+          auto hits = spatial_index_->query_point(cur_world);
+          if (!hits.empty()) {
+            h_node = pick_topmost_node(hits);
+            h_port = find_closest_or_create_port(*graph_model_, h_node, cur_world);
+          }
+        }
+        if (h_node != core::InvalidNodeId && h_port == core::InvalidPortId) {
+          h_port = find_closest_or_create_port(*graph_model_, h_node, cur_world);
+        }
+
+        if (active_edge_handle_.kind == EdgeHandleKind::StartEndpoint) {
+          edge->source_node = h_node;
+          edge->source_port = h_port;
+        } else if (active_edge_handle_.kind == EdgeHandleKind::EndEndpoint) {
+          edge->target_node = h_node;
+          edge->target_port = h_port;
+        } else if (active_edge_handle_.kind == EdgeHandleKind::ExtraSourceEndpoint) {
+          if (active_edge_handle_.index < edge->extra_sources.size()) {
+            edge->extra_sources[active_edge_handle_.index].source_node = h_node;
+            edge->extra_sources[active_edge_handle_.index].source_port = h_port;
+          }
+        } else if (active_edge_handle_.kind == EdgeHandleKind::ExtraDestinationEndpoint) {
+          if (active_edge_handle_.index < edge->extra_destinations.size()) {
+            edge->extra_destinations[active_edge_handle_.index].target_node = h_node;
+            edge->extra_destinations[active_edge_handle_.index].target_port = h_port;
+          }
+        }
+
+        graph_model_->update_edge_route(*edge);
+
+        if (command_history_) {
+          command_history_->execute(std::make_unique<core::MoveEdgeCommand>(
+              *graph_model_, selected_edge_, edge_snapshot_before_drag_, *edge));
+        }
+        emit diagram_modified();
+      }
+    }
+    active_edge_handle_ = {};
+    is_edge_drag_modified_ = false;
   }
 
   interaction_state_ = InteractionState::None;
@@ -4240,20 +4709,92 @@ void CanvasWidget::contextMenuEvent(QContextMenuEvent* event) {
           "QMenu::separator { height: 1px; background-color: #4A5568; margin: 4px 8px; }"
         );
 
-        auto* act_title = menu.addAction(QString::fromStdString(edge->name));
+        auto* act_title = menu.addAction(QString::fromStdString(edge->name.empty() ? ("Arrow Net " + std::to_string(target_edge)) : edge->name));
         act_title->setEnabled(false);
         menu.addSeparator();
 
-        if (edge->is_multipoint()) {
-          auto* act_align = menu.addAction("Align Multipoint Lines");
-          act_align->setCheckable(true);
-          act_align->setChecked(edge->is_branches_aligned());
-          connect(act_align, &QAction::toggled, this, [this, eid = target_edge](bool checked) {
-            set_edge_branches_aligned(eid, checked);
+        // Arrowheads Submenu: Independently select start and end arrow styles
+        auto* menu_arrowheads = menu.addMenu("Arrowheads");
+        const std::vector<std::pair<QString, std::string>> shapes = {
+          {"None", "none"},
+          {"Stealth", "stealth"},
+          {"Triangle", "triangle"},
+          {"Diamond", "diamond"},
+          {"Circle / Dot", "circle"},
+          {"Square / Box", "square"},
+          {"Open Vee", "vee"}
+        };
+
+        auto* menu_start_arrow = menu_arrowheads->addMenu("Start Arrow (Input)");
+        for (const auto& [label, shape_id] : shapes) {
+          auto* act = menu_start_arrow->addAction(label);
+          act->setCheckable(true);
+          act->setChecked(shape_id == "none" ? !edge->has_source_arrow() : (edge->has_source_arrow() && edge->source_arrowhead == shape_id));
+          connect(act, &QAction::triggered, this, [this, eid = target_edge, shape_id]() {
+            set_edge_source_arrow(eid, shape_id != "none", shape_id);
           });
         }
 
-        auto* act_del = menu.addAction("Delete Wire");
+        auto* menu_end_arrow = menu_arrowheads->addMenu("End Arrow (Output)");
+        for (const auto& [label, shape_id] : shapes) {
+          auto* act = menu_end_arrow->addAction(label);
+          act->setCheckable(true);
+          act->setChecked(shape_id == "none" ? !edge->has_target_arrow() : (edge->has_target_arrow() && edge->arrowhead == shape_id));
+          connect(act, &QAction::triggered, this, [this, eid = target_edge, shape_id]() {
+            set_edge_target_arrow(eid, shape_id != "none", shape_id);
+          });
+        }
+
+        // Topologies Submenu (Multiple Inputs & Multiple Outputs)
+        auto* menu_topology = menu.addMenu(QString("Topologies (%1 In ➔ %2 Out)")
+            .arg(edge->input_count()).arg(edge->output_count()));
+
+        auto* act_add_input = menu_topology->addAction("➕ Add Input Branch (Source)...");
+        connect(act_add_input, &QAction::triggered, this, [this, eid = target_edge]() {
+          if (!graph_model_) return;
+          const auto* e = graph_model_->find_edge(eid);
+          if (!e) return;
+          for (const auto& [nid, _] : graph_model_->nodes()) {
+            if (nid != e->source_node && nid != e->target_node) {
+              add_arrow_source_branch(eid, nid);
+              break;
+            }
+          }
+        });
+
+        auto* act_add_output = menu_topology->addAction("➕ Add Output Branch (Destination)...");
+        connect(act_add_output, &QAction::triggered, this, [this, eid = target_edge]() {
+          if (!graph_model_) return;
+          const auto* e = graph_model_->find_edge(eid);
+          if (!e) return;
+          for (const auto& [nid, _] : graph_model_->nodes()) {
+            if (nid != e->source_node && nid != e->target_node) {
+              bool exists = false;
+              for (const auto& d : e->extra_destinations) {
+                if (d.target_node == nid) { exists = true; break; }
+              }
+              if (!exists) {
+                add_arrow_branch(eid, nid);
+                break;
+              }
+            }
+          }
+        });
+
+        auto* act_align = menu_topology->addAction("Align Multipoint Lines");
+        act_align->setCheckable(true);
+        act_align->setChecked(edge->is_branches_aligned());
+        connect(act_align, &QAction::toggled, this, [this, eid = target_edge](bool checked) {
+          set_edge_branches_aligned(eid, checked);
+        });
+
+        auto* act_relocate = menu.addAction("Relocate / Detach Arrow");
+        connect(act_relocate, &QAction::triggered, this, [this, eid = target_edge]() {
+          relocate_edge(eid, {0.0, 0.0});
+        });
+
+        menu.addSeparator();
+        auto* act_del = menu.addAction("Delete Arrow");
         act_del->setShortcut(QKeySequence::Delete);
         connect(act_del, &QAction::triggered, this, &CanvasWidget::delete_selected);
 
@@ -4702,6 +5243,14 @@ void CanvasWidget::set_node_rotation(core::NodeId, double) {}
 double CanvasWidget::get_node_rotation(core::NodeId) const { return 0.0; }
 void CanvasWidget::finalize_instantiation() {}
 void CanvasWidget::apply_parametric_drag(core::Node&, HandleType, core::Vec2d, bool) {}
+bool CanvasWidget::add_arrow_source_branch(core::EdgeId, core::NodeId, core::PortId) { return false; }
+bool CanvasWidget::add_arrow_source_branch_to_selected(core::NodeId, core::PortId) { return false; }
+void CanvasWidget::set_edge_source_arrow(core::EdgeId, bool, const std::string&) {}
+void CanvasWidget::set_edge_target_arrow(core::EdgeId, bool, const std::string&) {}
+void CanvasWidget::set_selected_edge_source_arrow(bool, const std::string&) {}
+void CanvasWidget::set_selected_edge_target_arrow(bool, const std::string&) {}
+void CanvasWidget::relocate_edge(core::EdgeId, core::Vec2d) {}
+CanvasWidget::ActiveEdgeHandle CanvasWidget::hit_test_edge_handles(core::Vec2d, core::EdgeId) const { return {}; }
 #endif
 
 bool CanvasWidget::is_placement_tool_active() const noexcept {
@@ -5811,7 +6360,11 @@ void CanvasWidget::render_canvas() {
 
     // 4. Draw All Wires / Connection Nets with Antialiased Vector Geometry
     if (graph_model_) {
-      auto draw_arrowhead_func = [&](const core::Vec2d& p_prev, const core::Vec2d& p_tip, const QColor& color) {
+      auto draw_arrowhead_func = [&](const core::Vec2d& p_prev, const core::Vec2d& p_tip, const QColor& color, const std::string& shape_in) {
+        std::string shape = shape_in;
+        std::transform(shape.begin(), shape.end(), shape.begin(), [](unsigned char c) { return std::tolower(c); });
+        if (shape.empty() || shape == "none" || shape == "false") return;
+
         const auto p_tip_s = ctx.world_to_screen.map_point(p_tip);
         const auto p_prev_s = ctx.world_to_screen.map_point(p_prev);
         double dx = p_tip_s.x - p_prev_s.x;
@@ -5820,20 +6373,87 @@ void CanvasWidget::render_canvas() {
         if (len < 1e-4) return;
         dx /= len;
         dy /= len;
-        const double arrow_size = 9.0;
-        const double arrow_width = 4.5;
+        const double nx = -dy;
+        const double ny = dx;
+
         QPointF tip(p_tip_s.x, p_tip_s.y);
-        QPointF base = tip - QPointF(dx * arrow_size, dy * arrow_size);
-        QPointF left = base + QPointF(-dy * arrow_width, dx * arrow_width);
-        QPointF right = base + QPointF(dy * arrow_width, -dx * arrow_width);
-        QPainterPath head;
-        head.moveTo(tip);
-        head.lineTo(left);
-        head.lineTo(right);
-        head.closeSubpath();
-        painter.setBrush(color);
-        painter.setPen(Qt::NoPen);
-        painter.drawPath(head);
+
+        if (shape == "triangle") {
+          const double sz = 9.0;
+          const double hw = 5.0;
+          QPointF base = tip - QPointF(dx * sz, dy * sz);
+          QPointF left = base + QPointF(nx * hw, ny * hw);
+          QPointF right = base - QPointF(nx * hw, ny * hw);
+          QPainterPath head;
+          head.moveTo(tip);
+          head.lineTo(left);
+          head.lineTo(right);
+          head.closeSubpath();
+          painter.setBrush(color);
+          painter.setPen(Qt::NoPen);
+          painter.drawPath(head);
+        } else if (shape == "diamond") {
+          const double sz = 12.0;
+          const double hw = 4.5;
+          QPointF mid = tip - QPointF(dx * (sz * 0.5), dy * (sz * 0.5));
+          QPointF back = tip - QPointF(dx * sz, dy * sz);
+          QPointF left = mid + QPointF(nx * hw, ny * hw);
+          QPointF right = mid - QPointF(nx * hw, ny * hw);
+          QPainterPath head;
+          head.moveTo(tip);
+          head.lineTo(left);
+          head.lineTo(back);
+          head.lineTo(right);
+          head.closeSubpath();
+          painter.setBrush(color);
+          painter.setPen(Qt::NoPen);
+          painter.drawPath(head);
+        } else if (shape == "circle" || shape == "dot") {
+          const double r = 4.0;
+          QPointF center = tip - QPointF(dx * r, dy * r);
+          painter.setBrush(color);
+          painter.setPen(Qt::NoPen);
+          painter.drawEllipse(center, r, r);
+        } else if (shape == "square" || shape == "box") {
+          const double half_s = 4.0;
+          QPointF center = tip - QPointF(dx * half_s, dy * half_s);
+          QPainterPath head;
+          head.moveTo(center + QPointF(dx * half_s + nx * half_s, dy * half_s + ny * half_s));
+          head.lineTo(center + QPointF(-dx * half_s + nx * half_s, -dy * half_s + ny * half_s));
+          head.lineTo(center + QPointF(-dx * half_s - nx * half_s, -dy * half_s - ny * half_s));
+          head.lineTo(center + QPointF(dx * half_s - nx * half_s, dy * half_s - ny * half_s));
+          head.closeSubpath();
+          painter.setBrush(color);
+          painter.setPen(Qt::NoPen);
+          painter.drawPath(head);
+        } else if (shape == "vee" || shape == "open" || shape == "chevron") {
+          const double sz = 9.0;
+          const double hw = 5.0;
+          QPointF left = tip - QPointF(dx * sz - nx * hw, dy * sz - ny * hw);
+          QPointF right = tip - QPointF(dx * sz + nx * hw, dy * sz + ny * hw);
+          QPainterPath head;
+          head.moveTo(left);
+          head.lineTo(tip);
+          head.lineTo(right);
+          painter.setBrush(Qt::NoBrush);
+          painter.setPen(QPen(color, 2.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+          painter.drawPath(head);
+        } else {
+          // Default: stealth / filled
+          const double arrow_size = 9.0;
+          const double arrow_width = 4.5;
+          QPointF base = tip - QPointF(dx * arrow_size, dy * arrow_size);
+          QPointF left = base + QPointF(nx * arrow_width, ny * arrow_width);
+          QPointF right = base - QPointF(nx * arrow_width, ny * arrow_width);
+          QPainterPath head;
+          head.moveTo(tip);
+          head.lineTo(left);
+          head.lineTo(right);
+          head.closeSubpath();
+          painter.setBrush(color);
+          painter.setPen(Qt::NoPen);
+          painter.drawPath(head);
+        }
       };
 
       for (const auto& [eid, edge] : graph_model_->edges()) {
@@ -5871,17 +6491,52 @@ void CanvasWidget::render_canvas() {
         painter.setPen(wire_pen);
         painter.drawPath(wire_path);
 
-        // Source anchor connection dot
-        painter.setBrush(wire_color);
-        painter.setPen(Qt::NoPen);
-        painter.drawEllipse(QPointF(p0_s.x, p0_s.y), 2.5, 2.5);
-
-        // Terminal arrowhead for primary trunk
-        if (!edge.arrowhead.empty() || edge.properties.count("arrowhead") > 0) {
-          draw_arrowhead_func(edge.waypoints[edge.waypoints.size() - 2], edge.waypoints.back(), wire_color);
+        // Primary Source Endpoint: Arrowhead or Connection dot
+        if (edge.has_source_arrow()) {
+          draw_arrowhead_func(edge.waypoints[1], edge.waypoints.front(), wire_color, edge.source_arrowhead);
+        } else {
+          painter.setBrush(wire_color);
+          painter.setPen(Qt::NoPen);
+          painter.drawEllipse(QPointF(p0_s.x, p0_s.y), 2.5, 2.5);
         }
 
-        // Draw extra destination branches (multipoint arrows)
+        // Primary Target Endpoint: Arrowhead
+        if (edge.has_target_arrow()) {
+          draw_arrowhead_func(edge.waypoints[edge.waypoints.size() - 2], edge.waypoints.back(), wire_color, edge.arrowhead);
+        }
+
+        // Draw Extra Source Branches (Topologies: Multiple Inputs)
+        for (const auto& branch : edge.extra_sources) {
+          if (branch.waypoints.size() < 2) continue;
+
+          QPainterPath branch_path;
+          const auto bp0_s = ctx.world_to_screen.map_point(branch.waypoints.front());
+          branch_path.moveTo(QPointF(bp0_s.x, bp0_s.y));
+          for (size_t i = 1; i < branch.waypoints.size(); ++i) {
+            const auto bpi_s = ctx.world_to_screen.map_point(branch.waypoints[i]);
+            branch_path.lineTo(QPointF(bpi_s.x, bpi_s.y));
+          }
+          painter.setBrush(Qt::NoBrush);
+          painter.setPen(wire_pen);
+          painter.drawPath(branch_path);
+
+          // Junction ball where branch source joins trunk
+          const auto tap_s = ctx.world_to_screen.map_point(branch.waypoints.back());
+          painter.setBrush(wire_color);
+          painter.setPen(Qt::NoPen);
+          painter.drawEllipse(QPointF(tap_s.x, tap_s.y), 3.5, 3.5);
+
+          // Arrowhead at input source branch end
+          if (!branch.arrowhead.empty() && branch.arrowhead != "none") {
+            draw_arrowhead_func(branch.waypoints[1], branch.waypoints.front(), wire_color, branch.arrowhead);
+          } else {
+            painter.setBrush(wire_color);
+            painter.setPen(Qt::NoPen);
+            painter.drawEllipse(QPointF(bp0_s.x, bp0_s.y), 2.5, 2.5);
+          }
+        }
+
+        // Draw Extra Destination Branches (Topologies: Multiple Outputs)
         for (const auto& branch : edge.extra_destinations) {
           if (branch.waypoints.size() < 2) continue;
 
@@ -5902,8 +6557,39 @@ void CanvasWidget::render_canvas() {
           painter.drawEllipse(QPointF(bp0_s.x, bp0_s.y), 3.5, 3.5);
 
           // Terminal arrowhead for branch
-          if (!branch.arrowhead.empty()) {
-            draw_arrowhead_func(branch.waypoints[branch.waypoints.size() - 2], branch.waypoints.back(), wire_color);
+          if (!branch.arrowhead.empty() && branch.arrowhead != "none") {
+            draw_arrowhead_func(branch.waypoints[branch.waypoints.size() - 2], branch.waypoints.back(), wire_color, branch.arrowhead);
+          }
+        }
+
+        // Interactive Manipulator Handles for Selected Edge
+        if (edge.selected) {
+          auto draw_edge_handle = [&](const core::Vec2d& wpt, const QColor& fill_c, bool is_square = false) {
+            const auto spt = ctx.world_to_screen.map_point(wpt);
+            painter.setBrush(fill_c);
+            painter.setPen(QPen(Qt::white, 1.5));
+            if (is_square) {
+              painter.drawRect(QRectF(spt.x - 3.5, spt.y - 3.5, 7.0, 7.0));
+            } else {
+              painter.drawEllipse(QPointF(spt.x, spt.y), 4.5, 4.5);
+            }
+          };
+
+          // Start endpoint handle (emerald green)
+          draw_edge_handle(edge.waypoints.front(), QColor(0x10, 0xB9, 0x81), false);
+          // End endpoint handle (coral red)
+          draw_edge_handle(edge.waypoints.back(), QColor(0xEF, 0x44, 0x44), false);
+          // Intermediate waypoint handles (blue squares)
+          for (size_t i = 1; i + 1 < edge.waypoints.size(); ++i) {
+            draw_edge_handle(edge.waypoints[i], QColor(0x00, 0x78, 0xD4), true);
+          }
+          // Extra source endpoints
+          for (const auto& s : edge.extra_sources) {
+            if (!s.waypoints.empty()) draw_edge_handle(s.waypoints.front(), QColor(0x10, 0xB9, 0x81), false);
+          }
+          // Extra destination endpoints
+          for (const auto& d : edge.extra_destinations) {
+            if (!d.waypoints.empty()) draw_edge_handle(d.waypoints.back(), QColor(0xEF, 0x44, 0x44), false);
           }
         }
       }
@@ -5931,6 +6617,11 @@ void CanvasWidget::render_canvas() {
       for (const auto& [eid, edge] : graph_model_->edges()) {
         if (!edge.visible || edge.waypoints.size() < 2) continue;
         collect_segs(edge.waypoints, eid);
+        for (const auto& br : edge.extra_sources) {
+          if (br.waypoints.size() >= 2) {
+            collect_segs(br.waypoints, eid);
+          }
+        }
         for (const auto& br : edge.extra_destinations) {
           if (br.waypoints.size() >= 2) {
             collect_segs(br.waypoints, eid);
